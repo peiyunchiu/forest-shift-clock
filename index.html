@@ -1,0 +1,1032 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>靜謐森林屋 · 排班打卡</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#f2f5f1; --card:#ffffff; --ink:#1b2a21; --muted:#6a7c71;
+  --line:#dfe6df; --brand:#2f6b4f; --brand-soft:#e6f0ea; --brand-ink:#1e4a36;
+  --on-brand:#ffffff;
+  --warn:#a96c22; --warn-soft:#fdf1e0; --danger:#a8443a; --danger-soft:#fbeceb;
+  --toast-bg:#1e4a36; --toast-ink:#ffffff;
+  --shadow:0 1px 2px rgba(27,42,33,.06),0 6px 18px rgba(27,42,33,.06);
+  --r:14px;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#10140f; --card:#191f19; --ink:#e7ede7; --muted:#9aa89e;
+    --line:#2b332b; --brand:#6fb28a; --brand-soft:#1e2b23; --brand-ink:#a8d6bd;
+    --on-brand:#0f1a13;
+    --warn:#d9a25c; --warn-soft:#2c2418; --danger:#e08a7f; --danger-soft:#2d1c1a;
+    --toast-bg:#a8d6bd; --toast-ink:#10140f;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#10140f; --card:#191f19; --ink:#e7ede7; --muted:#9aa89e;
+  --line:#2b332b; --brand:#6fb28a; --brand-soft:#1e2b23; --brand-ink:#a8d6bd;
+  --on-brand:#0f1a13;
+  --warn:#d9a25c; --warn-soft:#2c2418; --danger:#e08a7f; --danger-soft:#2d1c1a;
+  --toast-bg:#a8d6bd; --toast-ink:#10140f;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"PingFang TC","Noto Sans TC","Helvetica Neue",Arial,sans-serif;
+  font-size:16px; line-height:1.55; -webkit-text-size-adjust:100%;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.page{max-width:760px;margin:0 auto;padding:0 14px 90px}
+header.top{
+  position:sticky;top:0;z-index:20;background:var(--bg);
+  padding:14px 0 8px;border-bottom:1px solid var(--line);
+}
+.brand{display:flex;align-items:baseline;gap:8px}
+.brand h1{font-size:18px;margin:0;letter-spacing:.5px}
+.brand .clock{margin-left:auto;font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);font-size:14px}
+nav.tabs{display:flex;gap:6px;margin-top:10px;overflow-x:auto;scrollbar-width:none}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs button{
+  flex:0 0 auto;border:1px solid var(--line);background:var(--card);color:var(--muted);
+  padding:7px 14px;border-radius:999px;font-size:14px;cursor:pointer;font-family:inherit;
+}
+nav.tabs button.on{background:var(--brand);border-color:var(--brand);color:var(--on-brand);font-weight:600}
+section{display:none;padding-top:16px}
+section.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px;box-shadow:var(--shadow);margin-bottom:14px}
+.card h2{margin:0 0 12px;font-size:16px}
+.row{display:flex;align-items:center;gap:10px}
+.row.wrap{flex-wrap:wrap}
+.spread{justify-content:space-between}
+.muted{color:var(--muted);font-size:13px}
+.big{font-family:var(--mono);font-size:29px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-1px}
+.who{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.who button{
+  flex:1 1 30%;min-width:90px;padding:11px 8px;border-radius:12px;border:1px solid var(--line);
+  background:var(--card);color:var(--ink);font-size:15px;cursor:pointer;font-family:inherit;
+}
+.who button.on{background:var(--brand-soft);border-color:var(--brand);color:var(--brand-ink);font-weight:700}
+button.btn{
+  border:0;border-radius:12px;padding:14px 16px;font-size:16px;font-weight:600;
+  background:var(--brand);color:var(--on-brand);cursor:pointer;width:100%;font-family:inherit;
+}
+button.btn.ghost{background:var(--card);color:var(--ink);border:1px solid var(--line);font-weight:500}
+button.btn.danger{background:var(--danger);color:#fff}
+button.btn:disabled{opacity:.45;cursor:not-allowed}
+button.mini{
+  border:1px solid var(--line);background:var(--card);color:var(--muted);
+  border-radius:9px;padding:6px 10px;font-size:13px;cursor:pointer;font-family:inherit;
+}
+button.mini.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--brand-soft);border-radius:12px;padding:10px 12px}
+.stat .k{font-size:12px;color:var(--muted)}
+.stat .v{font-family:var(--mono);font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.stat.warn{background:var(--warn-soft)} .stat.warn .v{color:var(--warn)}
+.stat.dang{background:var(--danger-soft)} .stat.dang .v{color:var(--danger)}
+label.chk{display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid var(--line);border-radius:12px;cursor:pointer;font-size:15px}
+label.chk.on{background:var(--warn-soft);border-color:var(--warn);color:var(--warn);font-weight:600}
+label.chk input{width:18px;height:18px;accent-color:var(--brand)}
+input[type=text],input[type=time],input[type=number],input[type=month],input[type=date],select,textarea{
+  font-family:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);
+  border-radius:10px;background:var(--card);color:var(--ink);width:100%;
+}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:500;font-size:12px;letter-spacing:.03em}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal .wd{text-align:center;font-size:12px;color:var(--muted);padding:4px 0}
+.cal .day{
+  min-height:74px;min-width:0;overflow:hidden;border:1px solid var(--line);border-radius:10px;padding:3px;
+  background:var(--card);cursor:pointer;display:flex;flex-direction:column;gap:2px;
+}
+.cal .day.pad{background:transparent;border-color:transparent;cursor:default}
+.cal .day.today{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand) inset}
+.cal .dnum{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.cal .chip{font-size:9px;letter-spacing:-.2px;min-width:0;line-height:1.5;border-radius:4px;
+  padding:1px 2px 1px 3px;border-left:3px solid var(--c,var(--brand));background:var(--brand-soft);
+  color:var(--brand-ink);white-space:nowrap;overflow:hidden;font-family:var(--mono);font-variant-numeric:tabular-nums}
+@media(min-width:520px){.cal .chip{font-size:11px;padding:1px 5px 1px 6px;letter-spacing:0}}
+.bank-strip{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;
+  padding:10px 12px;border-radius:12px;background:var(--brand-soft);color:var(--brand-ink);font-size:14px}
+.bank-strip .bs-r{white-space:nowrap;text-align:right;line-height:1.2}
+.bank-strip b{font-family:var(--mono);font-size:20px;font-weight:600;display:block}
+.bank-strip.low{background:var(--line);color:var(--muted)}
+.bankrow{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line);font-size:14px}
+.bankrow .amt{margin-left:auto;font-family:var(--mono);font-weight:600;font-variant-numeric:tabular-nums}
+.bankrow .amt.plus{color:var(--warn)} .bankrow .amt.minus{color:var(--brand)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;font-size:12px;color:var(--muted)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.cal .chip.fold{background:var(--warn-soft);color:var(--warn)}
+.cal .chip.off{background:var(--line);color:var(--muted)}
+.cal .chip.done{outline:1px solid var(--brand)}
+.rec{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card)}
+.rec .hd{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.tag{font-size:11px;padding:2px 7px;border-radius:999px;background:var(--brand-soft);color:var(--brand-ink)}
+.tag.fold{background:var(--warn-soft);color:var(--warn)}
+.tag.ot{background:var(--warn-soft);color:var(--warn)}
+.tag.short{background:var(--danger-soft);color:var(--danger)}
+.shots{display:flex;gap:8px;margin-top:8px}
+.shots figure{margin:0;flex:0 0 auto;text-align:center}
+.shots img{width:74px;height:74px;object-fit:cover;border-radius:9px;border:1px solid var(--line);display:block;cursor:zoom-in}
+.shots figcaption{font-size:11px;color:var(--muted);margin-top:2px}
+.modal{position:fixed;inset:0;background:rgba(10,18,13,.55);display:none;align-items:flex-end;justify-content:center;z-index:50;padding:0}
+.modal.on{display:flex}
+.sheet{background:var(--card);width:100%;max-width:760px;border-radius:18px 18px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto}
+.sheet h3{margin:0 0 14px;font-size:17px}
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:60}
+.lightbox.on{display:flex}
+.lightbox img{max-width:94vw;max-height:88vh;border-radius:10px}
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);
+  background:var(--toast-bg);color:var(--toast-ink);padding:11px 18px;border-radius:999px;font-size:14px;
+  opacity:0;pointer-events:none;transition:.25s;z-index:70;max-width:90vw;text-align:center;
+}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.divider{height:1px;background:var(--line);margin:14px 0}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+:focus-visible{outline:2px solid var(--brand);outline-offset:2px}
+.empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:14px}
+.warnbar{background:var(--danger-soft);color:var(--danger);border:1px solid var(--danger);border-radius:12px;padding:12px 14px;font-size:14px;margin-top:12px}
+.hint{font-size:12px;color:var(--muted);margin-top:6px}
+</style>
+</head>
+<body>
+<div class="page">
+  <div id="storeWarn" class="warnbar" hidden></div>
+  <header class="top">
+    <div class="brand">
+      <h1>🌲 靜謐森林屋 · 排班打卡</h1>
+      <span class="clock" id="liveClock">--:--</span>
+    </div>
+    <nav class="tabs" id="tabs">
+      <button data-tab="punch" class="on">打卡</button>
+      <button data-tab="sched">排班表</button>
+      <button data-tab="recs">紀錄</button>
+      <button data-tab="stats">統計</button>
+      <button data-tab="bank">折抵帳戶</button>
+      <button data-tab="setup">設定</button>
+    </nav>
+  </header>
+
+  <!-- ============ 打卡 ============ -->
+  <section id="tab-punch" class="on">
+    <div class="card">
+      <div class="row spread" style="margin-bottom:10px">
+        <div>
+          <div class="muted" id="punchDateLabel">今天</div>
+          <div class="big" id="punchClock">--:--:--</div>
+        </div>
+        <div style="text-align:right">
+          <div class="muted" id="targetCaption">今日應上班</div>
+          <div class="big" id="targetLabel">7.0 h</div>
+        </div>
+      </div>
+      <div class="who" id="whoBar"></div>
+      <label class="chk" id="foldWrap">
+        <input type="checkbox" id="foldChk">
+        <span>今晚有折備品（＋<span id="foldCutLabel">1</span> 小時存進帳戶）</span>
+      </label>
+      <div class="bank-strip" id="punchBank"></div>
+      <div class="hint" id="foldHint">折備品的時數不當天扣，先存進帳戶，之後到「折抵帳戶」挑一天抵。</div>
+      <div class="divider"></div>
+      <div id="punchState"></div>
+      <div class="grid2" style="margin-top:12px">
+        <button class="btn" id="btnIn">📷 上班打卡</button>
+        <button class="btn" id="btnOut">📷 下班打卡</button>
+      </div>
+      <div class="row" style="margin-top:10px;gap:8px">
+        <button class="mini" id="btnNoPhoto">不拍照直接打卡</button>
+        <button class="mini" id="btnFixToday">手動修改今天</button>
+      </div>
+    </div>
+    <div class="card" id="todayCard"></div>
+  </section>
+
+  <!-- ============ 排班表 ============ -->
+  <section id="tab-sched">
+    <div class="card">
+      <div class="row spread" style="margin-bottom:12px">
+        <button class="mini" id="mPrev">‹ 上個月</button>
+        <strong id="mLabel">2026 年 8 月</strong>
+        <button class="mini" id="mNext">下個月 ›</button>
+      </div>
+      <div class="cal" id="calGrid"></div>
+      <div class="legend" id="calLegend"></div>
+      <div class="hint">點任一天可排班：誰要上班、幾點開始、當晚有沒有折備品。橘色＝當晚要折備品，灰色＝休假，有綠框＝已經打完下班卡。</div>
+    </div>
+    <div class="card">
+      <h2>快速批次排班</h2>
+      <div class="row wrap" style="gap:8px">
+        <select id="bulkWho" style="flex:1 1 120px"></select>
+        <input type="date" id="bulkFrom" style="flex:1 1 130px">
+        <input type="date" id="bulkTo" style="flex:1 1 130px">
+      </div>
+      <div class="row wrap" style="gap:8px;margin-top:8px">
+        <input type="time" id="bulkStart" value="16:00" style="flex:1 1 110px">
+        <label class="chk" style="flex:1 1 150px"><input type="checkbox" id="bulkFold"><span>每天都要折備品</span></label>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <button class="btn" id="bulkApply">套用排班</button>
+        <button class="btn ghost" id="bulkOff">設為休假</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 紀錄 ============ -->
+  <section id="tab-recs">
+    <div class="card">
+      <div class="row wrap" style="gap:8px">
+        <input type="month" id="recMonth" style="flex:1 1 140px">
+        <select id="recWho" style="flex:1 1 120px"></select>
+      </div>
+    </div>
+    <div id="recList"></div>
+  </section>
+
+  <!-- ============ 統計 ============ -->
+  <section id="tab-stats">
+    <div class="card">
+      <div class="row wrap" style="gap:8px">
+        <input type="month" id="statMonth" style="flex:1 1 140px">
+        <button class="mini" id="btnCsv">匯出 CSV</button>
+      </div>
+    </div>
+    <div id="statBody"></div>
+  </section>
+
+  <!-- ============ 折抵帳戶 ============ -->
+  <section id="tab-bank">
+    <div class="card">
+      <h2>折備品時數帳戶</h2>
+      <div id="bankCards"></div>
+      <button class="btn" id="btnUse" style="margin-top:12px">用時數抵一天</button>
+      <div class="hint">每折一次備品 ＋<span id="creditHint">1</span> 小時。要抵的時候自己挑一天、填要抵幾小時；抵滿一天的時數就等於整天休。</div>
+    </div>
+    <div class="card">
+      <h2>進出明細</h2>
+      <div class="row wrap" style="gap:8px;margin-bottom:10px">
+        <select id="bankWho" style="flex:1 1 120px"></select>
+      </div>
+      <div id="bankList"></div>
+    </div>
+  </section>
+
+  <!-- ============ 設定 ============ -->
+  <section id="tab-setup">
+    <div class="card">
+      <h2>工時規則</h2>
+      <div class="row" style="gap:10px">
+        <div style="flex:1"><div class="muted">每天基本工時</div><input type="number" id="setBase" step="0.5" min="0" max="24"></div>
+        <div style="flex:1"><div class="muted">折備品每次入帳</div><input type="number" id="setCut" step="0.5" min="0" max="8"></div>
+      </div>
+      <div class="hint">預設：每天一律上 7 小時；每折一次備品，＋1 小時進帳戶，之後自己挑一天抵。抵用的時數會從那天的應上班時數扣掉。</div>
+    </div>
+    <div class="card">
+      <h2>員工</h2>
+      <div id="empEdit"></div>
+      <button class="mini" id="btnAddEmp" style="margin-top:8px">＋ 新增員工</button>
+    </div>
+    <div class="card">
+      <h2>備份與還原</h2>
+      <div class="grid2">
+        <button class="btn ghost" id="btnBackup">📦 下載備份檔</button>
+        <button class="btn ghost" id="btnRestore">📂 還原備份</button>
+      </div>
+      <div class="hint">紀錄與照片都存在這台裝置的瀏覽器裡，關掉網頁也不會不見。建議每個月下載一次備份檔留存。</div>
+      <div class="divider"></div>
+      <button class="btn danger" id="btnWipe">清空所有資料</button>
+    </div>
+  </section>
+</div>
+
+<input type="file" id="camIn" accept="image/*" capture="user" hidden>
+<input type="file" id="fileIn" accept="application/json" hidden>
+<div class="modal" id="modal"><div class="sheet" id="sheet"></div></div>
+<div class="lightbox" id="lightbox"><img id="lightboxImg" alt="打卡照片"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------------- 小工具 ---------------- */
+const $ = s => document.querySelector(s);
+const pad = n => String(n).padStart(2,'0');
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
+const dStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+const todayStr = () => dStr(new Date());
+const monStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+const hm = iso => { const d=new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const hrs = min => (min/60).toFixed(1);
+const WD = ['日','一','二','三','四','五','六'];
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
+function labelDate(ds){ const d=new Date(ds+'T00:00:00'); return `${d.getMonth()+1} 月 ${d.getDate()} 日（週${WD[d.getDay()]}）`; }
+
+/* ---------------- 儲存層：IndexedDB，不支援時自動退回 localStorage ---------------- */
+let _db, FALLBACK = false;
+function db(){
+  if(_db) return Promise.resolve(_db);
+  if(FALLBACK) return Promise.reject(new Error('fallback'));
+  return new Promise((res,rej)=>{
+    let r;
+    try{ r = indexedDB.open('forest-shift-clock',1); }catch(e){ return rej(e); }
+    r.onupgradeneeded = e => {
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+      if(!d.objectStoreNames.contains('photos')) d.createObjectStore('photos');
+    };
+    r.onsuccess = ()=>{ _db=r.result; res(_db); };
+    r.onerror = ()=>rej(r.error);
+    r.onblocked = ()=>rej(new Error('blocked'));
+  });
+}
+/* localStorage 版：照片轉成 dataURL 存，空間較小但至少不會不能用 */
+const LS = {
+  k:(s,key)=>`fsc:${s}:${key}`,
+  async get(store,key){
+    const v = localStorage.getItem(LS.k(store,key));
+    if(v===null) return undefined;
+    if(store==='photos') return await (await fetch(v)).blob();
+    return JSON.parse(v);
+  },
+  async put(store,key,val){
+    const v = store==='photos' ? await blobToDataURL(val) : JSON.stringify(val);
+    try{ localStorage.setItem(LS.k(store,key), v); }
+    catch(e){ alert('這台裝置的儲存空間滿了，請到「設定」下載備份後清掉舊資料。'); throw e; }
+  },
+  async del(store,key){ localStorage.removeItem(LS.k(store,key)); },
+  async clear(store){
+    Object.keys(localStorage).filter(k=>k.startsWith(`fsc:${store}:`)).forEach(k=>localStorage.removeItem(k));
+  },
+  keys(store){
+    return Object.keys(localStorage).filter(k=>k.startsWith(`fsc:${store}:`)).map(k=>k.slice(`fsc:${store}:`.length));
+  }
+};
+async function withStore(fn, lsFn){
+  if(FALLBACK) return lsFn();
+  try{ return await fn(); }
+  catch(e){ FALLBACK = true; console.warn('改用 localStorage 儲存：', e); return lsFn(); }
+}
+async function idbGet(store,key){
+  return withStore(async ()=>{
+    const d = await db();
+    return new Promise(res=>{ const q=d.transaction(store).objectStore(store).get(key); q.onsuccess=()=>res(q.result); q.onerror=()=>res(undefined); });
+  }, ()=>LS.get(store,key));
+}
+async function idbPut(store,key,val){
+  return withStore(async ()=>{
+    const d = await db();
+    return new Promise((res,rej)=>{ const t=d.transaction(store,'readwrite'); t.objectStore(store).put(val,key); t.oncomplete=res; t.onerror=()=>rej(t.error); });
+  }, ()=>LS.put(store,key,val));
+}
+async function idbDel(store,key){
+  return withStore(async ()=>{
+    const d = await db();
+    return new Promise(res=>{ const t=d.transaction(store,'readwrite'); t.objectStore(store).delete(key); t.oncomplete=res; t.onerror=res; });
+  }, ()=>LS.del(store,key));
+}
+async function idbClear(store){
+  return withStore(async ()=>{
+    const d = await db();
+    return new Promise(res=>{ const t=d.transaction(store,'readwrite'); t.objectStore(store).clear(); t.oncomplete=res; t.onerror=res; });
+  }, ()=>LS.clear(store));
+}
+async function allPhotos(){
+  return withStore(async ()=>{
+    const d = await db();
+    return new Promise(res=>{
+      const out=[], q=d.transaction('photos').objectStore('photos').openCursor();
+      q.onsuccess=e=>{ const c=e.target.result; if(!c) return res(out); out.push([c.key,c.value]); c.continue(); };
+      q.onerror=()=>res(out);
+    });
+  }, async ()=>{
+    const out=[]; for(const k of LS.keys('photos')) out.push([k, await LS.get('photos',k)]);
+    return out;
+  });
+}
+function blobToDataURL(blob){
+  return new Promise(res=>{ const fr=new FileReader(); fr.onload=()=>res(fr.result); fr.onerror=()=>res(null); fr.readAsDataURL(blob); });
+}
+
+/* ---------------- 狀態 ---------------- */
+const DEFAULT = {
+  employees:[{id:'e1',name:'Chloe'},{id:'e2',name:'Kobe'},{id:'e3',name:'夥伴 A'}],
+  settings:{base:7, cut:1},   // cut = 折備品每次入帳幾小時
+  shifts:{},   // "YYYY-MM-DD|empId" -> {start, fold, off}
+  records:{}   // "YYYY-MM-DD|empId" -> {date, emp, in, out, breakMin, fold, useMin, inPhoto, outPhoto, note}
+};
+let S = JSON.parse(JSON.stringify(DEFAULT));
+let curEmp = S.employees[0].id;
+let calMonth = new Date();
+let saveTimer;
+function save(){ clearTimeout(saveTimer); saveTimer = setTimeout(()=>idbPut('kv','state',JSON.parse(JSON.stringify(S))),120); }
+async function load(){
+  const s = await idbGet('kv','state');
+  if(s){ S = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), s); S.settings = Object.assign({base:7,cut:1}, s.settings||{}); }
+  if(!S.employees.length) S.employees = JSON.parse(JSON.stringify(DEFAULT.employees));
+  curEmp = S.employees[0].id;
+}
+const key = (ds,emp) => ds+'|'+emp;
+const empName = id => (S.employees.find(e=>e.id===id)||{name:'？'}).name;
+const PALETTE = ['#3f8f68','#4a76c4','#b06ab0','#c1873a','#4aa3a3','#c25f5f'];
+const empColor = id => PALETTE[Math.max(0,S.employees.findIndex(e=>e.id===id)) % PALETTE.length];
+
+/* ---------------- 計算 ---------------- */
+function isFold(ds,emp){
+  const r = S.records[key(ds,emp)];
+  if(r && r.fold !== undefined && r.fold !== null) return !!r.fold;
+  const sh = S.shifts[key(ds,emp)];
+  return !!(sh && sh.fold);
+}
+function foldMin(ds,emp){                      // 這天折備品賺到的時數（進帳戶）
+  return isFold(ds,emp) ? Math.round(S.settings.cut * 60) : 0;
+}
+function usedMin(ds,emp){                     // 這天動用帳戶抵掉的時數
+  const r = S.records[key(ds,emp)];
+  return Math.max(0, Math.round((r && r.useMin) || 0));
+}
+function targetMin(ds,emp){
+  const sh = S.shifts[key(ds,emp)];
+  if(sh && sh.off) return 0;
+  return Math.max(0, S.settings.base * 60 - usedMin(ds,emp));
+}
+function dayEntries(){    // 所有算得上數的日子：打卡紀錄 ∪ 排班排了折備品且日子已經到的班
+  const out = {};
+  Object.entries(S.records).forEach(([k,r])=>{ out[k] = r; });
+  const today = todayStr();
+  Object.entries(S.shifts).forEach(([k,sh])=>{
+    if(!sh || !sh.fold || out[k]) return;
+    const [ds,emp] = k.split('|');
+    if(ds > today) return;                    // 未來的班還沒發生，先不入帳
+    out[k] = {date:ds, emp, in:null, out:null, breakMin:0, fold:null, useMin:0, note:'', virtual:true};
+  });
+  return Object.values(out);
+}
+function bank(emp, mo){                       // mo 有給就只算那個月，沒給算全部
+  let earned = 0, used = 0;
+  dayEntries().forEach(r=>{
+    if(r.emp !== emp) return;
+    if(mo && !r.date.startsWith(mo)) return;
+    earned += foldMin(r.date, r.emp);
+    used   += Math.max(0, Math.round(r.useMin || 0));
+  });
+  return {earned, used, left: earned - used};
+}
+function workedMin(r){
+  if(!r || !r.in || !r.out) return 0;
+  let m = (new Date(r.out) - new Date(r.in)) / 60000;
+  if(m < 0) m += 24*60;                       // 跨夜
+  return Math.max(0, Math.round(m - (r.breakMin||0)));
+}
+function dayCalc(ds,emp){
+  const r = S.records[key(ds,emp)];
+  const t = targetMin(ds,emp);
+  const w = workedMin(r);
+  return { rec:r, target:t, worked:w, over:Math.max(0,w-t), short:(r&&r.in&&r.out)?Math.max(0,t-w):0,
+           fold:foldMin(ds,emp), used:usedMin(ds,emp) };
+}
+
+/* ---------------- 照片 ---------------- */
+function shrink(file){
+  return new Promise(res=>{
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      const max = 720, sc = Math.min(1, max/Math.max(img.width,img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width*sc); c.height = Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      URL.revokeObjectURL(url);
+      c.toBlob(b=>res(b||file),'image/jpeg',0.72);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); res(file); };
+    img.src = url;
+  });
+}
+const photoUrls = {};
+async function photoUrl(id){
+  if(!id) return null;
+  if(photoUrls[id]) return photoUrls[id];
+  const b = await idbGet('photos',id);
+  if(!b) return null;
+  return (photoUrls[id] = URL.createObjectURL(b));
+}
+let camResolve = null;
+$('#camIn').addEventListener('change', async e=>{
+  const f = e.target.files[0]; e.target.value='';
+  if(camResolve){ const r=camResolve; camResolve=null; r(f||null); }
+});
+function takePhoto(){
+  return new Promise(res=>{ camResolve = res; $('#camIn').click(); });
+}
+
+/* ---------------- 打卡 ---------------- */
+async function doPunch(kind, withPhoto){
+  const ds = todayStr(), k = key(ds,curEmp);
+  let photoId = null;
+  if(withPhoto){
+    const f = await takePhoto();
+    if(!f){ toast('沒有拍到照片，這次不記錄'); return; }
+    const blob = await shrink(f);
+    photoId = uid();
+    await idbPut('photos', photoId, blob);
+  }
+  const now = new Date().toISOString();
+  const r = S.records[k] || { date:ds, emp:curEmp, breakMin:0, fold:null, note:'' };
+  if(kind === 'in'){
+    if(r.in && !confirm('今天已經有上班打卡紀錄（'+hm(r.in)+'），要覆蓋嗎？')) return;
+    r.in = now; if(photoId) r.inPhoto = photoId;
+  }else{
+    if(!r.in && !confirm('今天還沒有上班打卡，仍要記下班嗎？')) return;
+    r.out = now; if(photoId) r.outPhoto = photoId;
+  }
+  r.fold = $('#foldChk').checked;
+  S.records[k] = r; save();
+  toast(kind==='in' ? `${empName(curEmp)} 上班打卡 ${hm(now)} ✅` : `${empName(curEmp)} 下班打卡 ${hm(now)} ✅`);
+  renderPunch(); renderCal();
+}
+$('#btnIn').onclick = ()=>doPunch('in', true);
+$('#btnOut').onclick = ()=>doPunch('out', true);
+$('#btnNoPhoto').onclick = ()=>{
+  openSheet(`<h3>不拍照打卡</h3><div class="grid2">
+    <button class="btn" data-np="in">記上班時間</button>
+    <button class="btn" data-np="out">記下班時間</button></div>
+    <button class="btn ghost" style="margin-top:10px" data-close>取消</button>`);
+  $('#sheet').querySelectorAll('[data-np]').forEach(b=>b.onclick=()=>{ closeSheet(); doPunch(b.dataset.np,false); });
+};
+$('#btnFixToday').onclick = ()=>editRecord(todayStr(), curEmp);
+$('#foldChk').onchange = ()=>{
+  const ds = todayStr(), k = key(ds,curEmp);
+  const sh = S.shifts[k] || {};
+  const r = S.records[k] || {date:ds, emp:curEmp, breakMin:0, useMin:0, note:''};
+  r.fold = $('#foldChk').checked;
+  // 沒打卡、沒抵用、排班也沒排折備品 → 這筆就沒有存在的必要
+  if(!r.fold && !sh.fold && !r.in && !r.out && !r.useMin) delete S.records[k];
+  else S.records[k] = r;
+  save(); renderAll();
+  toast(r.fold ? `折備品 ＋${S.settings.cut} 小時已入帳` : '已取消今晚的折備品');
+};
+
+/* ---------------- 畫面：打卡 ---------------- */
+function renderWho(){
+  $('#whoBar').innerHTML = S.employees.map(e=>
+    `<button data-e="${e.id}" class="${e.id===curEmp?'on':''}">${e.name}</button>`).join('');
+  $('#whoBar').querySelectorAll('button').forEach(b=>b.onclick=()=>{ curEmp=b.dataset.e; renderWho(); renderPunch(); });
+}
+async function renderPunch(){
+  const ds = todayStr(), c = dayCalc(ds,curEmp), r = c.rec;
+  $('#punchDateLabel').textContent = labelDate(ds);
+  $('#foldChk').checked = isFold(ds,curEmp);
+  $('#foldWrap').classList.toggle('on', $('#foldChk').checked);
+  $('#foldCutLabel').textContent = S.settings.cut;
+  const off = (S.shifts[key(ds,curEmp)]||{}).off;
+  $('#targetLabel').textContent = off ? '休假' : hrs(c.target)+' h';
+  $('#targetCaption').textContent = c.used ? `今日應上班（已抵 ${hrs(c.used)}h）` : '今日應上班';
+  const bk = bank(curEmp);
+  const strip = $('#punchBank');
+  strip.className = 'bank-strip' + (bk.left>0 ? '' : ' low');
+  strip.innerHTML = `<div><div>🧺 ${empName(curEmp)} 的折備品帳戶</div>`
+    + `<div class="muted">累積 ${hrs(bk.earned)} ・已抵 ${hrs(bk.used)}</div></div>`
+    + `<div class="bs-r"><b>${hrs(bk.left)} h</b><span class="muted">可抵時數</span></div>`;
+
+  let state;
+  if(!r || !r.in) state = `<div class="muted">還沒打上班卡。</div>`;
+  else if(!r.out) state = `<div class="row spread"><div><div class="muted">上班</div><div class="big">${hm(r.in)}</div></div>
+      <div style="text-align:right"><div class="muted">已經上了</div><div class="big">${hrs(Math.max(0,(Date.now()-new Date(r.in))/60000 - (r.breakMin||0)))} h</div></div></div>`;
+  else state = `<div class="row spread"><div><div class="muted">上班</div><div class="big">${hm(r.in)}</div></div>
+      <div><div class="muted">下班</div><div class="big">${hm(r.out)}</div></div>
+      <div style="text-align:right"><div class="muted">實際工時</div><div class="big">${hrs(c.worked)} h</div></div></div>
+      <div class="row wrap" style="margin-top:10px;gap:6px">
+        ${c.over?`<span class="tag ot">加班 ${hrs(c.over)} h</span>`:''}
+        ${c.short?`<span class="tag short">少 ${hrs(c.short)} h</span>`:''}
+        ${(!c.over&&!c.short)?`<span class="tag">剛剛好 👌</span>`:''}
+        ${r.breakMin?`<span class="tag">休息 ${r.breakMin} 分</span>`:''}
+      </div>`;
+  $('#punchState').innerHTML = state;
+  $('#btnIn').textContent = (r&&r.in) ? '📷 重打上班卡' : '📷 上班打卡';
+  $('#btnOut').textContent = (r&&r.out) ? '📷 重打下班卡' : '📷 下班打卡';
+
+  // 今日全員概況
+  const rows = await Promise.all(S.employees.map(async e=>{
+    const cc = dayCalc(ds,e.id), rr = cc.rec, sh = S.shifts[key(ds,e.id)]||{};
+    let st = '<span class="muted">未打卡</span>';
+    if(sh.off && !rr) st = '<span class="tag">休假</span>';
+    if(rr && rr.in && !rr.out) st = `<span class="tag">上班中 ${hm(rr.in)}</span>`;
+    if(rr && rr.in && rr.out) st = `${hm(rr.in)}–${hm(rr.out)} · ${hrs(cc.worked)}h ${cc.over?`<span class="tag ot">加 ${hrs(cc.over)}</span>`:''}${cc.short?`<span class="tag short">少 ${hrs(cc.short)}</span>`:''}`;
+    if(!rr && cc.used) st = `<span class="tag">抵用 ${hrs(cc.used)}h</span>`;
+    if(rr && !rr.in && cc.used) st = `<span class="tag">抵用 ${hrs(cc.used)}h</span>`;
+    const pu = await photoUrl(rr && rr.inPhoto);
+    return `<tr><td>${e.name}${isFold(ds,e.id)?' <span class="tag fold">折</span>':''}</td><td>${st}</td>
+      <td class="num">${pu?`<img src="${pu}" style="width:34px;height:34px;object-fit:cover;border-radius:7px;cursor:zoom-in" data-zoom="${pu}">`:''}</td></tr>`;
+  }));
+  $('#todayCard').innerHTML = `<h2>今天大家的狀況</h2><table><tbody>${rows.join('')}</tbody></table>`;
+  bindZoom($('#todayCard'));
+}
+
+/* ---------------- 畫面：排班月曆 ---------------- */
+function renderCal(){
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  $('#mLabel').textContent = `${y} 年 ${m+1} 月`;
+  const first = new Date(y,m,1), last = new Date(y,m+1,0);
+  let html = WD.map(w=>`<div class="wd">${w}</div>`).join('');
+  for(let i=0;i<first.getDay();i++) html += `<div class="day pad"></div>`;
+  for(let d=1; d<=last.getDate(); d++){
+    const ds = `${y}-${pad(m+1)}-${pad(d)}`;
+    const chips = S.employees.map(e=>{
+      const sh = S.shifts[key(ds,e.id)], r = S.records[key(ds,e.id)];
+      if(!sh && !r) return '';
+      if(sh && sh.off && !r) return `<div class="chip off" style="--c:var(--muted)" title="${e.name} 休假">休</div>`;
+      const t = r&&r.in ? hm(r.in) : (sh&&sh.start ? sh.start : '排');
+      const f = isFold(ds,e.id);
+      return `<div class="chip ${f?'fold':''} ${r&&r.out?'done':''}" style="--c:${empColor(e.id)}" title="${e.name} ${t}${f?'（折備品）':''}">${t}</div>`;
+    }).join('');
+    html += `<div class="day ${ds===todayStr()?'today':''}" data-d="${ds}"><div class="dnum">${d}</div>${chips}</div>`;
+  }
+  $('#calGrid').innerHTML = html;
+  $('#calLegend').innerHTML = S.employees.map(e=>`<span><i style="background:${empColor(e.id)}"></i>${e.name}</span>`).join('');
+  $('#calGrid').querySelectorAll('[data-d]').forEach(el=>el.onclick=()=>editDay(el.dataset.d));
+}
+$('#mPrev').onclick = ()=>{ calMonth.setMonth(calMonth.getMonth()-1); renderCal(); };
+$('#mNext').onclick = ()=>{ calMonth.setMonth(calMonth.getMonth()+1); renderCal(); };
+
+function editDay(ds){
+  const body = S.employees.map(e=>{
+    const sh = S.shifts[key(ds,e.id)]||{};
+    return `<div class="card" style="box-shadow:none;margin-bottom:10px">
+      <div class="row spread"><strong>${e.name}</strong>
+        <label class="chk" style="padding:6px 10px"><input type="checkbox" data-off="${e.id}" ${sh.off?'checked':''}><span>休假</span></label></div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <div style="flex:1"><div class="muted">上班時間</div><input type="time" data-start="${e.id}" value="${sh.start||''}"></div>
+        <label class="chk" style="flex:1"><input type="checkbox" data-fold="${e.id}" ${sh.fold?'checked':''}><span>當晚折備品</span></label>
+      </div></div>`;
+  }).join('');
+  openSheet(`<h3>${labelDate(ds)} 排班</h3>${body}
+    <div class="grid2"><button class="btn" data-save>儲存排班</button><button class="btn ghost" data-close>取消</button></div>`);
+  $('#sheet').querySelector('[data-save]').onclick = ()=>{
+    S.employees.forEach(e=>{
+      const off = $(`#sheet [data-off="${e.id}"]`).checked;
+      const start = $(`#sheet [data-start="${e.id}"]`).value;
+      const fold = $(`#sheet [data-fold="${e.id}"]`).checked;
+      if(!off && !start && !fold) delete S.shifts[key(ds,e.id)];
+      else S.shifts[key(ds,e.id)] = {off,start,fold};
+    });
+    save(); closeSheet(); renderCal(); renderPunch(); toast('排班已儲存');
+  };
+}
+
+/* 批次排班 */
+function bulkRange(fn){
+  const emp = $('#bulkWho').value, a = $('#bulkFrom').value, b = $('#bulkTo').value;
+  if(!a || !b){ toast('請先選開始與結束日期'); return; }
+  let d = new Date(a+'T00:00:00'), end = new Date(b+'T00:00:00'), n = 0;
+  while(d <= end && n < 400){ fn(dStr(d), emp); d.setDate(d.getDate()+1); n++; }
+  save(); renderCal(); renderPunch(); toast(`已套用 ${n} 天`);
+}
+$('#bulkApply').onclick = ()=>bulkRange((ds,emp)=>{ S.shifts[key(ds,emp)] = {off:false, start:$('#bulkStart').value, fold:$('#bulkFold').checked}; });
+$('#bulkOff').onclick   = ()=>bulkRange((ds,emp)=>{ S.shifts[key(ds,emp)] = {off:true, start:'', fold:false}; });
+
+/* ---------------- 畫面：紀錄 ---------------- */
+async function renderRecs(){
+  const mo = $('#recMonth').value || monStr(new Date());
+  const who = $('#recWho').value;
+  const list = dayEntries()
+    .filter(r=>r.date.startsWith(mo) && (who==='all' || r.emp===who))
+    .sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
+  if(!list.length){ $('#recList').innerHTML = `<div class="card"><div class="empty">這個月還沒有打卡紀錄。</div></div>`; return; }
+  const cards = await Promise.all(list.map(async r=>{
+    const c = dayCalc(r.date,r.emp);
+    const [pi,po] = await Promise.all([photoUrl(r.inPhoto), photoUrl(r.outPhoto)]);
+    return `<div class="rec">
+      <div class="hd">
+        <strong>${labelDate(r.date)}</strong><span class="tag">${empName(r.emp)}</span>
+        ${isFold(r.date,r.emp)?`<span class="tag fold">折備品 +${hrs(c.fold)}h</span>`:''}
+        ${c.used?`<span class="tag">抵用 ${hrs(c.used)}h</span>`:''}
+        ${c.over?`<span class="tag ot">加班 ${hrs(c.over)}h</span>`:''}
+        ${c.short?`<span class="tag short">少 ${hrs(c.short)}h</span>`:''}
+        <button class="mini" style="margin-left:auto" data-edit="${r.date}|${r.emp}">修改</button>
+      </div>
+      <div class="row wrap" style="gap:14px;margin-top:6px">
+        <div><div class="muted">上班</div><strong>${r.in?hm(r.in):'—'}</strong></div>
+        <div><div class="muted">下班</div><strong>${r.out?hm(r.out):'—'}</strong></div>
+        <div><div class="muted">休息</div><strong>${r.breakMin||0} 分</strong></div>
+        <div><div class="muted">實際／應上班</div><strong>${hrs(c.worked)} / ${hrs(c.target)} h</strong></div>
+      </div>
+      ${r.note?`<div class="muted" style="margin-top:6px">📝 ${r.note}</div>`:''}
+      ${(pi||po)?`<div class="shots">
+        ${pi?`<figure><img src="${pi}" data-zoom="${pi}"><figcaption>上班</figcaption></figure>`:''}
+        ${po?`<figure><img src="${po}" data-zoom="${po}"><figcaption>下班</figcaption></figure>`:''}
+      </div>`:''}
+    </div>`;
+  }));
+  $('#recList').innerHTML = cards.join('');
+  $('#recList').querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>{ const [d,e]=b.dataset.edit.split('|'); editRecord(d,e); });
+  bindZoom($('#recList'));
+}
+$('#recMonth').onchange = renderRecs;
+$('#recWho').onchange = renderRecs;
+
+function editRecord(ds,emp){
+  const k = key(ds,emp), r = S.records[k] || {date:ds, emp, breakMin:0, fold:null, note:''};
+  openSheet(`<h3>${labelDate(ds)} · ${empName(emp)}</h3>
+    <div class="row" style="gap:8px">
+      <div style="flex:1"><div class="muted">上班</div><input type="time" id="edIn" value="${r.in?hm(r.in):''}"></div>
+      <div style="flex:1"><div class="muted">下班</div><input type="time" id="edOut" value="${r.out?hm(r.out):''}"></div>
+      <div style="flex:1"><div class="muted">休息(分)</div><input type="number" id="edBreak" min="0" step="5" value="${r.breakMin||0}"></div>
+    </div>
+    <label class="chk" style="margin-top:10px"><input type="checkbox" id="edFold" ${isFold(ds,emp)?'checked':''}><span>當晚有折備品（＋${S.settings.cut} 小時進帳戶）</span></label>
+    <div style="margin-top:10px"><div class="muted">這天用帳戶抵掉幾小時</div><input type="number" id="edUse" step="0.5" min="0" max="24" value="${(usedMin(ds,emp)/60)||0}"></div>
+    <div style="margin-top:10px"><div class="muted">備註</div><input type="text" id="edNote" value="${(r.note||'').replace(/"/g,'&quot;')}" placeholder="例如：客人晚退房、臨時加班"></div>
+    <div class="grid2" style="margin-top:12px"><button class="btn" data-save>儲存</button><button class="btn ghost" data-close>取消</button></div>
+    <button class="btn danger" style="margin-top:8px" data-del>刪除這筆紀錄</button>`);
+  const mk = t => t ? new Date(`${ds}T${t}:00`).toISOString() : null;
+  $('#sheet').querySelector('[data-save]').onclick = ()=>{
+    const i=$('#edIn').value, o=$('#edOut').value;
+    const useH = Math.max(0, +$('#edUse').value || 0);
+    if(!i && !o && !useH && !$('#edFold').checked){ toast('至少要填一個時間，或填抵用時數'); return; }
+    r.in = i ? mk(i) : null;
+    if(o) r.out = mk(o); else r.out = null;
+    r.breakMin = +$('#edBreak').value || 0;
+    r.fold = $('#edFold').checked;
+    r.useMin = Math.round(useH*60);
+    r.note = $('#edNote').value.trim();
+    S.records[k] = r; save(); closeSheet(); renderAll(); toast('已更新');
+  };
+  $('#sheet').querySelector('[data-del]').onclick = async ()=>{
+    if(!confirm('確定刪除這天的紀錄？照片也會一起刪掉。')) return;
+    if(r.inPhoto) await idbDel('photos',r.inPhoto);
+    if(r.outPhoto) await idbDel('photos',r.outPhoto);
+    delete S.records[k]; save(); closeSheet(); renderAll(); toast('已刪除');
+  };
+}
+
+/* ---------------- 畫面：統計 ---------------- */
+function monthRows(mo){
+  return dayEntries().filter(r=>r.date.startsWith(mo)).sort((a,b)=>a.date<b.date?-1:1);
+}
+function renderStats(){
+  const mo = $('#statMonth').value || monStr(new Date());
+  const rows = monthRows(mo);
+  const per = S.employees.map(e=>{
+    const mine = rows.filter(r=>r.emp===e.id);
+    let w=0,t=0,ot=0,sh=0,days=0,fold=0;
+    mine.forEach(r=>{ const c=dayCalc(r.date,r.emp); if(!r.in) return; days++; w+=c.worked; t+=c.target; ot+=c.over; sh+=c.short; if(isFold(r.date,r.emp)) fold++; });
+    return {e,w,t,ot,sh,days,fold, mb:bank(e.id,mo), bk:bank(e.id)};
+  });
+  const cards = per.map(p=>`<div class="card">
+    <div class="row spread"><h2 style="margin:0">${p.e.name}</h2><span class="muted">出勤 ${p.days} 天 · 折備品 ${p.fold} 晚</span></div>
+    <div class="grid2" style="margin-top:10px">
+      <div class="stat"><div class="k">實際工時</div><div class="v">${hrs(p.w)} h</div></div>
+      <div class="stat"><div class="k">應上班工時</div><div class="v">${hrs(p.t)} h</div></div>
+      <div class="stat warn"><div class="k">加班合計</div><div class="v">${hrs(p.ot)} h</div></div>
+      <div class="stat dang"><div class="k">不足合計</div><div class="v">${hrs(p.sh)} h</div></div>
+      <div class="stat warn"><div class="k">本月折備品入帳</div><div class="v">+${hrs(p.mb.earned)} h</div></div>
+      <div class="stat"><div class="k">本月抵用 ／ 帳戶剩餘</div><div class="v">${hrs(p.mb.used)} ／ ${hrs(p.bk.left)} h</div></div>
+    </div></div>`).join('');
+  const detail = rows.length ? `<div class="card"><h2>每日明細</h2><div style="overflow-x:auto"><table>
+    <thead><tr><th>日期</th><th>人</th><th>上/下班</th><th class="num">實際</th><th class="num">應上班</th><th class="num">加班</th><th class="num">折備品</th><th class="num">抵用</th></tr></thead>
+    <tbody>${rows.map(r=>{const c=dayCalc(r.date,r.emp);const d=new Date(r.date+'T00:00:00');
+      return `<tr><td>${d.getMonth()+1}/${d.getDate()}<span class="muted"> 週${WD[d.getDay()]}</span></td>
+      <td>${empName(r.emp)}${isFold(r.date,r.emp)?' <span class="tag fold">折</span>':''}</td>
+      <td>${r.in?hm(r.in):'—'}–${r.out?hm(r.out):'—'}</td>
+      <td class="num">${hrs(c.worked)}</td><td class="num">${hrs(c.target)}</td>
+      <td class="num" style="color:${c.over?'var(--warn)':c.short?'var(--danger)':'inherit'}">${c.over?'+'+hrs(c.over):c.short?'-'+hrs(c.short):'0.0'}</td>
+      <td class="num" style="color:${c.fold?'var(--warn)':'inherit'}">${c.fold?'+'+hrs(c.fold):'—'}</td>
+      <td class="num">${c.used?hrs(c.used):'—'}</td></tr>`;}).join('')}
+    </tbody></table></div></div>` : `<div class="card"><div class="empty">這個月還沒有資料。</div></div>`;
+  $('#statBody').innerHTML = cards + detail;
+}
+$('#statMonth').onchange = renderStats;
+$('#btnCsv').onclick = ()=>{
+  const mo = $('#statMonth').value || monStr(new Date());
+  const rows = monthRows(mo);
+  if(!rows.length){ toast('這個月沒有資料可以匯出'); return; }
+  const head = ['日期','星期','員工','上班','下班','休息(分)','折備品入帳','抵用時數','實際工時','應上班工時','加班','不足','備註'];
+  const body = rows.map(r=>{ const c=dayCalc(r.date,r.emp), d=new Date(r.date+'T00:00:00');
+    return [r.date,'週'+WD[d.getDay()],empName(r.emp),r.in?hm(r.in):'',r.out?hm(r.out):'',r.breakMin||0,
+      hrs(c.fold),hrs(c.used),hrs(c.worked),hrs(c.target),hrs(c.over),hrs(c.short),(r.note||'').replace(/,/g,'，')].join(',');
+  });
+  download(new Blob(['﻿'+[head.join(','),...body].join('\n')],{type:'text/csv'}), `打卡紀錄_${mo}.csv`);
+};
+
+/* ---------------- 畫面：折抵帳戶 ---------------- */
+function bankEntries(who){
+  const out = [];
+  dayEntries().forEach(r=>{
+    if(who !== 'all' && r.emp !== who) return;
+    const f = foldMin(r.date, r.emp), u = usedMin(r.date, r.emp);
+    if(f) out.push({date:r.date, emp:r.emp, min:f,  kind:'fold'});
+    if(u) out.push({date:r.date, emp:r.emp, min:-u, kind:'use', note:r.note});
+  });
+  return out.sort((a,b)=> a.date<b.date ? 1 : a.date>b.date ? -1 : 0);
+}
+function renderBank(){
+  $('#creditHint').textContent = S.settings.cut;
+  $('#bankCards').innerHTML = S.employees.map(e=>{
+    const b = bank(e.id);
+    return `<div class="row spread" style="padding:10px 0;border-bottom:1px solid var(--line)">
+      <div><strong>${e.name}</strong><div class="muted">累積 ${hrs(b.earned)} ・已抵 ${hrs(b.used)}</div></div>
+      <div style="text-align:right">
+        <div class="big" style="color:${b.left<0?'var(--danger)':'var(--brand)'}">${hrs(b.left)} h</div>
+        <div class="muted">可抵時數</div>
+      </div></div>`;
+  }).join('');
+
+  const who = $('#bankWho').value || 'all';
+  const list = bankEntries(who);
+  $('#bankList').innerHTML = list.length ? list.map(x=>`<div class="bankrow">
+      <div>
+        <div>${labelDate(x.date)}<span class="muted"> ・${empName(x.emp)}</span></div>
+        <div class="muted">${x.kind==='fold' ? '折備品入帳' : '抵用時數' + (x.note ? '　' + x.note : '')}</div>
+      </div>
+      <div class="amt ${x.min>0?'plus':'minus'}">${x.min>0?'+':'−'}${hrs(Math.abs(x.min))} h</div>
+      <button class="mini" data-bedit="${x.date}|${x.emp}">改</button>
+    </div>`).join('') : `<div class="empty">還沒有任何折備品或抵用紀錄。</div>`;
+  $('#bankList').querySelectorAll('[data-bedit]').forEach(b=>b.onclick=()=>{
+    const [d,e] = b.dataset.bedit.split('|'); editRecord(d,e);
+  });
+}
+$('#bankWho').onchange = renderBank;
+
+$('#btnUse').onclick = ()=>{
+  const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}（可抵 ${hrs(bank(e.id).left)} h）</option>`).join('');
+  openSheet(`<h3>用折備品時數抵一天</h3>
+    <div class="muted">誰要抵</div><select id="useWho">${opts}</select>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <div style="flex:1"><div class="muted">哪一天</div><input type="date" id="useDate" value="${todayStr()}"></div>
+      <div style="flex:1"><div class="muted">抵幾小時</div><input type="number" id="useHrs" step="0.5" min="0" max="24" value="${S.settings.base}"></div>
+    </div>
+    <div class="hint">抵滿 ${S.settings.base} 小時就等於那天整天不用上班。填 0 可以取消已經抵掉的時數。</div>
+    <div style="margin-top:10px"><div class="muted">備註</div><input type="text" id="useNote" placeholder="例如：換 5/30 補休"></div>
+    <div class="grid2" style="margin-top:12px"><button class="btn" data-save>確定抵用</button><button class="btn ghost" data-close>取消</button></div>`);
+  $('#sheet').querySelector('#useWho').value = curEmp;
+  $('#sheet').querySelector('[data-save]').onclick = ()=>{
+    const emp = $('#useWho').value, ds = $('#useDate').value;
+    const h = Math.max(0, +$('#useHrs').value || 0);
+    if(!ds){ toast('請選日期'); return; }
+    const k = key(ds,emp), r = S.records[k] || {date:ds, emp, breakMin:0, fold:null, note:''};
+    const before = usedMin(ds,emp);
+    const left = bank(emp).left + before;          // 先把這天原本抵的加回來再看夠不夠
+    if(h*60 > left && !confirm(`${empName(emp)} 的帳戶只夠抵 ${hrs(left)} 小時，還是要抵 ${h} 小時嗎？（帳戶會變負的）`)) return;
+    r.useMin = Math.round(h*60);
+    const note = $('#useNote').value.trim();
+    if(note) r.note = note;
+    if(!r.useMin && !r.in && !r.out && !r.fold) delete S.records[k]; else S.records[k] = r;
+    save(); closeSheet(); renderAll();
+    toast(h ? `${labelDate(ds)} 抵掉 ${h} 小時` : '已取消這天的抵用');
+  };
+};
+
+/* ---------------- 設定 ---------------- */
+function renderSetup(){
+  $('#setBase').value = S.settings.base;
+  $('#setCut').value = S.settings.cut;
+  $('#empEdit').innerHTML = S.employees.map((e,i)=>`<div class="row" style="gap:8px;margin-bottom:8px">
+    <input type="text" value="${e.name.replace(/"/g,'&quot;')}" data-name="${e.id}">
+    <button class="mini" data-rm="${e.id}" ${S.employees.length<=1?'disabled':''}>移除</button></div>`).join('');
+  $('#empEdit').querySelectorAll('[data-name]').forEach(inp=>inp.onchange=()=>{
+    const e = S.employees.find(x=>x.id===inp.dataset.name);
+    e.name = inp.value.trim() || e.name; save(); renderAll();
+  });
+  $('#empEdit').querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+    if(!confirm('移除這位員工？他過去的打卡紀錄會保留但不再顯示於打卡頁。')) return;
+    S.employees = S.employees.filter(x=>x.id!==b.dataset.rm);
+    if(!S.employees.find(x=>x.id===curEmp)) curEmp = S.employees[0].id;
+    save(); renderAll();
+  });
+}
+$('#setBase').onchange = ()=>{ S.settings.base = +$('#setBase').value||7; save(); renderAll(); };
+$('#setCut').onchange  = ()=>{ S.settings.cut  = +$('#setCut').value||0;  save(); renderAll(); };
+$('#btnAddEmp').onclick = ()=>{ S.employees.push({id:uid(), name:'新員工'}); save(); renderAll(); };
+
+/* 存檔：網頁版走 Artifact 的下載能力，本機檔案版走一般下載連結 */
+async function download(blob,name){
+  let dl = null;
+  try{ if(typeof claude !== 'undefined' && claude.use) dl = await claude.use('downloads'); }catch(e){ dl = null; }
+  if(dl){
+    try{ await dl.save({filename:name, data:blob}); toast('已儲存：'+name); return; }
+    catch(err){
+      const code = err && err.code;
+      if(code === 'extension_not_enabled' && name.endsWith('.csv')){
+        try{ await dl.save({filename:name.replace(/\.csv$/,'.txt'), data:blob}); toast('已存成 .txt，用 Excel 就能開'); return; }
+        catch(e2){ if(e2 && e2.code === 'declined') return; toast('存檔沒成功：'+((e2&&e2.message)||'未知原因')); return; }
+      }
+      if(code === 'declined') return;
+      toast('存檔沒成功：'+((err&&err.message)||'未知原因')); return;
+    }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),3000);
+}
+$('#btnBackup').onclick = async ()=>{
+  // 先一次撈完照片（IndexedDB 交易不能等非同步讀檔）
+  const items = await allPhotos();
+  const photos = {};
+  for(const [k,blob] of items){ const u = await blobToDataURL(blob); if(u) photos[k]=u; }
+  await download(new Blob([JSON.stringify({v:1, state:S, photos},null,0)],{type:'application/json'}),
+           `排班打卡備份_${todayStr()}.json`);
+};
+$('#btnRestore').onclick = ()=>$('#fileIn').click();
+$('#fileIn').addEventListener('change', async e=>{
+  const f = e.target.files[0]; e.target.value=''; if(!f) return;
+  if(!confirm('還原會覆蓋目前這台裝置上的所有資料，確定嗎？')) return;
+  try{
+    const data = JSON.parse(await f.text());
+    if(!data.state) throw new Error('格式不對');
+    S = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), data.state);
+    await idbClear('photos');
+    for(const [id,durl] of Object.entries(data.photos||{})){
+      const blob = await (await fetch(durl)).blob();
+      await idbPut('photos', id, blob);
+    }
+    Object.keys(photoUrls).forEach(k=>delete photoUrls[k]);
+    curEmp = S.employees[0].id; save(); renderAll(); toast('已還原備份 ✅');
+  }catch(err){ alert('還原失敗：' + err.message); }
+});
+$('#btnWipe').onclick = async ()=>{
+  if(!confirm('會刪掉所有打卡紀錄、排班與照片，無法復原。確定？')) return;
+  if(!confirm('真的確定？建議先下載備份檔。')) return;
+  await idbClear('photos'); S = JSON.parse(JSON.stringify(DEFAULT));
+  curEmp = S.employees[0].id; save(); renderAll(); toast('已清空');
+};
+
+/* ---------------- 共用 UI ---------------- */
+function openSheet(html){ $('#sheet').innerHTML = html; $('#modal').classList.add('on');
+  $('#sheet').querySelectorAll('[data-close]').forEach(b=>b.onclick=closeSheet);
+  $('#sheet').querySelectorAll('label.chk input').forEach(i=>{
+    const sync=()=>i.closest('label').classList.toggle('on', i.checked); sync(); i.onchange=sync; });
+}
+function closeSheet(){ $('#modal').classList.remove('on'); }
+$('#modal').onclick = e=>{ if(e.target.id==='modal') closeSheet(); };
+function bindZoom(root){
+  root.querySelectorAll('[data-zoom]').forEach(img=>img.onclick=()=>{
+    $('#lightboxImg').src = img.dataset.zoom; $('#lightbox').classList.add('on'); });
+}
+$('#lightbox').onclick = ()=>$('#lightbox').classList.remove('on');
+$('#foldChk').addEventListener('change', ()=>$('#foldWrap').classList.toggle('on', $('#foldChk').checked));
+
+$('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
+  $('#tabs').querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  document.querySelectorAll('section').forEach(s=>s.classList.remove('on'));
+  b.classList.add('on'); $('#tab-'+b.dataset.tab).classList.add('on');
+  if(b.dataset.tab==='recs') renderRecs();
+  if(b.dataset.tab==='stats') renderStats();
+  if(b.dataset.tab==='setup') renderSetup();
+  if(b.dataset.tab==='sched') renderCal();
+  if(b.dataset.tab==='bank') renderBank();
+});
+
+function renderAll(){ fillSelects(); renderWho(); renderPunch(); renderCal(); renderRecs(); renderStats(); renderBank(); renderSetup(); }
+function fillSelects(){
+  const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  const bw = $('#bulkWho'), rw = $('#recWho'), kw = $('#bankWho');
+  const bwv = bw.value, rwv = rw.value, kwv = kw.value;
+  bw.innerHTML = opts;
+  rw.innerHTML = `<option value="all">全部員工</option>` + opts;
+  kw.innerHTML = `<option value="all">全部員工</option>` + opts;
+  if(bwv) bw.value = bwv; if(rwv) rw.value = rwv; if(kwv) kw.value = kwv;
+}
+function tick(){
+  const n = new Date();
+  $('#liveClock').textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}`;
+  $('#punchClock').textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`;
+}
+
+async function storageProbe(){
+  try{
+    await idbPut('kv','__probe__', 1);
+    const v = await idbGet('kv','__probe__');
+    await idbDel('kv','__probe__');
+    if(v !== 1) throw new Error('讀不回來');
+    if(FALLBACK){
+      const w = $('#storeWarn'); w.hidden = false;
+      w.innerHTML = '⚠️ 這台裝置不支援大容量儲存，已改用簡易模式：紀錄照樣存得住，但照片存太多可能會塞爆。請記得到「設定」定期下載備份檔。';
+    }
+    return true;
+  }catch(e){
+    const w = $('#storeWarn'); w.hidden = false;
+    w.innerHTML = '⚠️ <b>這個瀏覽器不讓網頁存資料，打卡紀錄不會被保留。</b><br>請關掉無痕／私密瀏覽模式，或改用 Chrome 開啟這個網址。';
+    return false;
+  }
+}
+
+(async function init(){
+  await storageProbe();
+  await load();
+  const mo = monStr(new Date());
+  $('#recMonth').value = mo; $('#statMonth').value = mo;
+  $('#bulkFrom').value = todayStr(); $('#bulkTo').value = todayStr();
+  fillSelects(); renderAll(); tick(); setInterval(tick,1000);
+  setInterval(()=>{ if($('#tab-punch').classList.contains('on')) renderPunch(); }, 60000);
+})();
+</script>
+</body>
+</html>
