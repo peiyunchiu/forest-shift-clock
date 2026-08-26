@@ -198,7 +198,7 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <span>今晚有折備品（＋<span id="foldCutLabel">1</span> 小時存進帳戶）</span>
       </label>
       <div class="bank-strip" id="punchBank"></div>
-      <div class="hint" id="foldHint">折備品的時數不當天扣，先存進帳戶，之後到「折抵帳戶」挑一天抵。</div>
+      <div class="hint" id="foldHint">折備品的時數不當天扣，先存進帳戶，之後到「折抵帳戶」挑一天抵。休假日去折、或忘了勾的日子，到「折抵帳戶 → 補登折備品」補。</div>
       <div class="divider"></div>
       <div id="punchState"></div>
       <div class="grid2" style="margin-top:12px">
@@ -270,8 +270,11 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
     <div class="card">
       <h2>折備品時數帳戶</h2>
       <div id="bankCards"></div>
-      <button class="btn" id="btnUse" style="margin-top:12px">用時數抵一天</button>
-      <div class="hint">每折一次備品 ＋<span id="creditHint">1</span> 小時。要抵的時候自己挑一天、填要抵幾小時；抵滿一天的時數就等於整天休。</div>
+      <div class="grid2" style="margin-top:12px">
+        <button class="btn ghost" id="btnAddFold">＋ 補登折備品</button>
+        <button class="btn" id="btnUse">用時數抵一天</button>
+      </div>
+      <div class="hint">每折一次備品預設 ＋<span id="creditHint">1</span> 小時。<b>休假日去折、或忘了勾的日子，都用「補登折備品」補上</b>，時數可以自己填。要抵的時候挑一天、填要抵幾小時；抵滿一天的時數就等於整天休。</div>
     </div>
     <div class="card">
       <h2>進出明細</h2>
@@ -447,6 +450,8 @@ function isFold(ds,emp){
   return !!(sh && sh.fold);
 }
 function foldMin(ds,emp){                      // 這天折備品賺到的時數（進帳戶）
+  const r = S.records[key(ds,emp)];
+  if(r && r.foldMins != null) return Math.max(0, Math.round(r.foldMins));   // 補登時自己填的時數
   return isFold(ds,emp) ? Math.round(S.settings.cut * 60) : 0;
 }
 function usedMin(ds,emp){                     // 這天動用帳戶抵掉的時數
@@ -567,6 +572,7 @@ $('#foldChk').onchange = ()=>{
   const sh = S.shifts[k] || {};
   const r = S.records[k] || {date:ds, emp:curEmp, breakMin:0, useMin:0, note:''};
   r.fold = $('#foldChk').checked;
+  delete r.foldMins;                       // 用勾的就是預設時數，之後想改時數到「補登折備品」
   // 沒打卡、沒抵用、排班也沒排折備品 → 這筆就沒有存在的必要
   if(!r.fold && !sh.fold && !r.in && !r.out && !r.useMin) delete S.records[k];
   else S.records[k] = r;
@@ -642,7 +648,10 @@ function renderCal(){
     const chips = S.employees.map(e=>{
       const sh = S.shifts[key(ds,e.id)], r = S.records[key(ds,e.id)];
       if(!sh && !r) return '';
-      if(sh && sh.off && !r) return `<div class="chip off" style="--c:var(--muted)" title="${e.name} 休假">休</div>`;
+      const fm = foldMin(ds,e.id);
+      if(sh && sh.off && !(r && r.in)) return fm
+        ? `<div class="chip fold" style="--c:${empColor(e.id)}" title="${e.name} 休假日折備品 +${hrs(fm)}h">休 +${hrs(fm)}</div>`
+        : `<div class="chip off" style="--c:var(--muted)" title="${e.name} 休假">休</div>`;
       const t = r&&r.in ? hm(r.in) : (sh&&sh.start ? sh.start : '排');
       const f = isFold(ds,e.id);
       return `<div class="chip ${f?'fold':''} ${r&&r.out?'done':''}" style="--c:${empColor(e.id)}" title="${e.name} ${t}${f?'（折備品）':''}">${t}</div>`;
@@ -740,7 +749,7 @@ function editRecord(ds,emp){
       <div style="flex:1"><div class="muted">下班</div><input type="time" id="edOut" value="${r.out?hm(r.out):''}"></div>
       <div style="flex:1"><div class="muted">休息(分)</div><input type="number" id="edBreak" min="0" step="5" value="${r.breakMin||0}"></div>
     </div>
-    <label class="chk" style="margin-top:10px"><input type="checkbox" id="edFold" ${isFold(ds,emp)?'checked':''}><span>當晚有折備品（＋${S.settings.cut} 小時進帳戶）</span></label>
+    <div style="margin-top:10px"><div class="muted">這天折備品幾小時（0 ＝ 沒折）</div><input type="number" id="edFold" step="0.5" min="0" max="12" value="${(foldMin(ds,emp)/60)||0}"></div>
     <div style="margin-top:10px"><div class="muted">這天用帳戶抵掉幾小時</div><input type="number" id="edUse" step="0.5" min="0" max="24" value="${(usedMin(ds,emp)/60)||0}"></div>
     <div style="margin-top:10px"><div class="muted">備註</div><input type="text" id="edNote" value="${(r.note||'').replace(/"/g,'&quot;')}" placeholder="例如：客人晚退房、臨時加班"></div>
     <div class="grid2" style="margin-top:12px"><button class="btn" data-save>儲存</button><button class="btn ghost" data-close>取消</button></div>
@@ -748,12 +757,14 @@ function editRecord(ds,emp){
   const mk = t => t ? new Date(`${ds}T${t}:00`).toISOString() : null;
   $('#sheet').querySelector('[data-save]').onclick = ()=>{
     const i=$('#edIn').value, o=$('#edOut').value;
-    const useH = Math.max(0, +$('#edUse').value || 0);
-    if(!i && !o && !useH && !$('#edFold').checked){ toast('至少要填一個時間，或填抵用時數'); return; }
+    const useH  = Math.max(0, +$('#edUse').value || 0);
+    const foldH = Math.max(0, +$('#edFold').value || 0);
+    if(!i && !o && !useH && !foldH){ toast('至少要填一個時間，或填折備品／抵用時數'); return; }
     r.in = i ? mk(i) : null;
     if(o) r.out = mk(o); else r.out = null;
     r.breakMin = +$('#edBreak').value || 0;
-    r.fold = $('#edFold').checked;
+    r.fold = foldH > 0;
+    if(foldH) r.foldMins = Math.round(foldH*60); else delete r.foldMins;
     r.useMin = Math.round(useH*60);
     r.note = $('#edNote').value.trim();
     S.records[k] = r; save(); closeSheet(); renderAll(); toast('已更新');
@@ -776,7 +787,10 @@ function renderStats(){
   const per = S.employees.map(e=>{
     const mine = rows.filter(r=>r.emp===e.id);
     let w=0,t=0,ot=0,sh=0,days=0,fold=0;
-    mine.forEach(r=>{ const c=dayCalc(r.date,r.emp); if(!r.in) return; days++; w+=c.worked; t+=c.target; ot+=c.over; sh+=c.short; if(isFold(r.date,r.emp)) fold++; });
+    mine.forEach(r=>{ const c=dayCalc(r.date,r.emp);
+      if(c.fold) fold++;                       // 折備品跟有沒有打卡無關，休假日也算
+      if(!r.in) return;
+      days++; w+=c.worked; t+=c.target; ot+=c.over; sh+=c.short; });
     return {e,w,t,ot,sh,days,fold, mb:bank(e.id,mo), bk:bank(e.id)};
   });
   const cards = per.map(p=>`<div class="card">
@@ -853,6 +867,34 @@ function renderBank(){
   });
 }
 $('#bankWho').onchange = renderBank;
+
+$('#btnAddFold').onclick = ()=>{
+  const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  openSheet(`<h3>補登折備品</h3>
+    <div class="muted">誰折的</div><select id="fWho">${opts}</select>
+    <div class="row" style="gap:8px;margin-top:10px">
+      <div style="flex:1"><div class="muted">哪一天</div><input type="date" id="fDate" value="${todayStr()}"></div>
+      <div style="flex:1"><div class="muted">折了幾小時</div><input type="number" id="fHrs" step="0.5" min="0" max="12" value="${S.settings.cut}"></div>
+    </div>
+    <div class="hint">休假日、沒上班的日子也能補登，一樣入帳。填 0 就是取消那天的折備品。</div>
+    <div style="margin-top:10px"><div class="muted">備註</div><input type="text" id="fNote" placeholder="例如：休假日回來折了兩批"></div>
+    <div class="grid2" style="margin-top:12px"><button class="btn" data-save>存進帳戶</button><button class="btn ghost" data-close>取消</button></div>`);
+  $('#sheet').querySelector('#fWho').value = curEmp;
+  $('#sheet').querySelector('[data-save]').onclick = ()=>{
+    const emp = $('#fWho').value, ds = $('#fDate').value;
+    const h = Math.max(0, +$('#fHrs').value || 0);
+    if(!ds){ toast('請選日期'); return; }
+    const k = key(ds,emp), sh = S.shifts[k] || {};
+    const r = S.records[k] || {date:ds, emp, breakMin:0, useMin:0, note:''};
+    r.fold = h > 0;
+    if(h) r.foldMins = Math.round(h*60); else delete r.foldMins;
+    const note = $('#fNote').value.trim();
+    if(note) r.note = note;
+    if(!r.fold && !sh.fold && !r.in && !r.out && !r.useMin) delete S.records[k]; else S.records[k] = r;
+    save(); closeSheet(); renderAll();
+    toast(h ? `${labelDate(ds)} 折備品 ＋${h} 小時已入帳` : '已取消那天的折備品');
+  };
+};
 
 $('#btnUse').onclick = ()=>{
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}（可抵 ${hrs(bank(e.id).left)} h）</option>`).join('');
