@@ -3,6 +3,7 @@
 三個人共用的拍照打卡 + 排班小工具。整個網站就是 `index.html` 這一個檔案，沒有後端、不用註冊、不用資料庫。
 
 **線上版：** https://peiyunchiu.github.io/forest-shift-clock/
+**用 LINE 打卡：** 設定步驟看 [SETUP-LINE.md](SETUP-LINE.md)
 
 ## 怎麼打開
 
@@ -50,3 +51,24 @@
 - **每個月到「設定 → 下載備份檔」存一份**（含照片）。換裝置時用「還原備份」搬過去
 
 想要三個人各自的手機都同步同一份資料，就得再接雲端資料庫，那是另一階段的工程，跟 Chloe 說一聲再做。
+
+## 用 LINE 打卡（選配）
+
+接上 LINE 官方帳號後，在 LINE 按一下就能打卡，三個人的紀錄會匯到同一份 `data/records.json`，網站讀的也是這一份。
+
+```
+LINE 按「上班」→ Apps Script 收到 → 寫進 GitHub → 網站顯示
+```
+
+- 設定步驟：[SETUP-LINE.md](SETUP-LINE.md)
+- 機器人程式碼：[apps-script/Code.gs](apps-script/Code.gs)
+- 沒設定也沒關係，網站本身照常能用，資料就存在各自裝置
+
+### 檔案
+
+| 路徑 | 用途 |
+|---|---|
+| `index.html` | 整個網站 |
+| `apps-script/Code.gs` | LINE 機器人 + 雲端資料讀寫 |
+| `data/records.json` | 雲端那本帳（打卡、排班、折抵都在這） |
+| `assets/richmenu.png` | LINE 圖文選單的底圖 |

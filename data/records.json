@@ -1,0 +1,24 @@
+{
+ "version": 1,
+ "updatedAt": "",
+ "employees": [
+  {
+   "id": "e1",
+   "name": "Chloe"
+  },
+  {
+   "id": "e2",
+   "name": "Kobe"
+  },
+  {
+   "id": "e3",
+   "name": "夥伴 A"
+  }
+ ],
+ "settings": {
+  "base": 7,
+  "cut": 1
+ },
+ "shifts": {},
+ "records": {}
+}
