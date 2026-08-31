@@ -12,6 +12,8 @@
  *   GH_PATH     data/records.json
  *   WEB_KEY     網站寫入用的通關密語（自己想一組，網站設定頁要填同一組）
  *   SITE_URL    https://peiyunchiu.github.io/forest-shift-clock/
+ *   PHOTO_DIR   （程式自己會填）Google Drive 存打卡照片的資料夾 ID
+ *   PHOTO_OPEN  照片要不要開放連結觀看，填 yes 才能在網站上看到（預設 yes）
  */
 
 var P = PropertiesService.getScriptProperties();
@@ -92,6 +94,9 @@ function handleLineEvent(ev) {
   if (ev.type === 'follow') {
     return replyWhoAreYou(ev.replyToken, '歡迎！先告訴我你是誰，之後按選單就能打卡。');
   }
+  if (ev.type === 'message' && ev.message && ev.message.type === 'image') {
+    return handlePhoto(ev, uid);
+  }
   if (ev.type !== 'message' || !ev.message || ev.message.type !== 'text') return;
 
   var text = String(ev.message.text || '').trim();
@@ -122,7 +127,7 @@ function handleLineEvent(ev) {
   if (/^(改名|換人|重新綁定)/.test(text))          return replyWhoAreYou(ev.replyToken, '要改綁成誰？');
 
   return reply(ev.replyToken,
-    '看得懂這幾個：\n・上班\n・下班\n・折備品（可加時數，例如「折備品 2」）\n・今日\n・時數\n・網站',
+    '看得懂這幾個：\n・上班\n・下班\n・折備品（可加時數，例如「折備品 2」）\n・今日\n・時數\n・網站\n\n打完卡直接傳照片，就會自動附到那筆打卡上。',
     menuQuick());
 }
 
@@ -155,7 +160,12 @@ function doPunch(token, me, ds, kind) {
   }
   if (kind === 'in' && !out.rec.out) msg += '\n\n下班記得再按一次「下班」。';
 
-  return reply(token, msg, menuQuick());
+  // 記著「這個人剛打了什麼卡」，接下來 10 分鐘內傳的照片就附到這一筆
+  CacheService.getScriptCache().put('pend_' + me.lineUserId,
+    JSON.stringify({ kind: kind, ds: ds }), 600);
+
+  msg += '\n\n要拍張照存證嗎？按下面的「📷 拍照」。';
+  return reply(token, msg, cameraQuick());
 }
 
 function doFold(token, me, ds, text) {
@@ -185,6 +195,66 @@ function doFold(token, me, ds, text) {
   return reply(token,
     '🧺 ' + me.name + ' 今天折備品 ' + hrs(res.mins) + ' 小時已入帳\n目前可抵 ' + hrs(left) + ' 小時',
     menuQuick());
+}
+
+/**
+ * 收到照片：抓下來存進 Google Drive，掛到剛剛那筆打卡上。
+ * 沒有「剛剛那筆」的話，就掛到今天最後一次打卡。
+ */
+function handlePhoto(ev, uid) {
+  var s = readState();
+  var me = findByLine(s, uid);
+  if (!me) return replyWhoAreYou(ev.replyToken, '先告訴我你是誰，照片才知道要算誰的：');
+
+  var cache = CacheService.getScriptCache();
+  var pend = cache.get('pend_' + uid);
+  var kind, ds;
+  if (pend) {
+    var o = JSON.parse(pend); kind = o.kind; ds = o.ds;
+  } else {
+    ds = today();
+    var r0 = s.records[ds + '|' + me.id];
+    if (!r0 || !r0.in) return reply(ev.replyToken, '收到照片了，但今天還沒有打卡紀錄。\n先按「上班」或「下班」，再拍照就會自動附上去。', menuQuick());
+    kind = r0.out ? 'out' : 'in';
+  }
+
+  var fileId;
+  try { fileId = savePhotoToDrive(ev.message.id, me.name, ds, kind); }
+  catch (err) { return reply(ev.replyToken, '照片存不起來 😣\n' + err.message, menuQuick()); }
+
+  mutate(function (st) {
+    var k = ds + '|' + me.id;
+    var r = st.records[k] || { date: ds, emp: me.id, breakMin: 0, useMin: 0, note: '' };
+    if (kind === 'in') r.inPhoto = 'gd:' + fileId; else r.outPhoto = 'gd:' + fileId;
+    st.records[k] = r;
+  }, '打卡照片 ' + me.name + ' ' + nowStamp());
+
+  cache.remove('pend_' + uid);
+  return reply(ev.replyToken,
+    '📸 照片存好了，已經附在' + (kind === 'in' ? '上班' : '下班') + '那筆上。\n網站的「紀錄」頁看得到。',
+    menuQuick());
+}
+
+function savePhotoToDrive(messageId, empName, ds, kind) {
+  var res = UrlFetchApp.fetch('https://api-data.line.me/v2/bot/message/' + messageId + '/content', {
+    headers: { Authorization: 'Bearer ' + P.getProperty('LINE_TOKEN') }, muteHttpExceptions: true });
+  if (res.getResponseCode() >= 300) throw new Error('跟 LINE 拿照片失敗 ' + res.getResponseCode());
+
+  var blob = res.getBlob().setName(ds + '_' + empName + '_' + (kind === 'in' ? '上班' : '下班') + '.jpg');
+  var folder = photoFolder();
+  var file = folder.createFile(blob);
+  if ((P.getProperty('PHOTO_OPEN') || 'yes') === 'yes') {
+    try { file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW); } catch (e) { log('分享設定失敗: ' + e); }
+  }
+  return file.getId();
+}
+
+function photoFolder() {
+  var id = P.getProperty('PHOTO_DIR');
+  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* 資料夾被刪了就重建 */ } }
+  var f = DriveApp.createFolder('森林屋打卡照片');
+  P.setProperty('PHOTO_DIR', f.getId());
+  return f;
 }
 
 function todayReport(s, ds) {
@@ -237,6 +307,16 @@ function menuQuick() {
   return { items: ['上班', '下班', '折備品', '今日', '時數'].map(function (t) {
     return { type: 'action', action: { type: 'message', label: t, text: t } };
   }) };
+}
+
+/** 打完卡用這組：第一顆直接開相機、第二顆從相簿挑 */
+function cameraQuick() {
+  return { items: [
+    { type: 'action', action: { type: 'camera',     label: '📷 拍照' } },
+    { type: 'action', action: { type: 'cameraRoll', label: '🖼 從相簿選' } },
+    { type: 'action', action: { type: 'message',    label: '不用了', text: '今日' } },
+    { type: 'action', action: { type: 'message',    label: '折備品', text: '折備品' } }
+  ] };
 }
 
 function replyWhoAreYou(token, lead) {

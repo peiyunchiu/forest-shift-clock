@@ -319,7 +319,7 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <button class="btn" id="btnCloudOn">連線並同步</button>
         <button class="btn ghost" id="btnCloudOff">改回只存這台</button>
       </div>
-      <div class="hint">連上之後，三個人（含 LINE 打的卡）看到的是同一本帳。照片還是只留在拍照的那台裝置，不會上傳。</div>
+      <div class="hint">連上之後，三個人（含 LINE 打的卡）看到的是同一本帳。<b>用 LINE 拍的照片存在 Google Drive，三個人都看得到</b>；用這個網頁拍的照片只留在拍照的那台裝置。</div>
     </div>
     <div class="card">
       <h2>備份與還原</h2>
@@ -616,8 +616,16 @@ function shrink(file){
   });
 }
 const photoUrls = {};
+function driveThumb(fileId, w){ return 'https://drive.google.com/thumbnail?id='+fileId+'&sz=w'+(w||600); }
+/** Drive 縮圖偶爾會擋，換另一個網址再試一次 */
+function imgAlt(el){
+  const m = el.src.match(/[?&]id=([^&]+)/);
+  if(m && !el.dataset.retried){ el.dataset.retried='1'; el.src='https://lh3.googleusercontent.com/d/'+m[1]+'=w600'; }
+  else { el.closest('figure') ? el.closest('figure').remove() : el.remove(); }
+}
 async function photoUrl(id){
   if(!id) return null;
+  if(id.indexOf('gd:') === 0) return driveThumb(id.slice(3));   // LINE 拍的，存在 Google Drive
   if(photoUrls[id]) return photoUrls[id];
   const b = await idbGet('photos',id);
   if(!b) return null;
@@ -730,7 +738,7 @@ async function renderPunch(){
     if(rr && !rr.in && cc.used) st = `<span class="tag">抵用 ${hrs(cc.used)}h</span>`;
     const pu = await photoUrl(rr && rr.inPhoto);
     return `<tr><td>${e.name}${isFold(ds,e.id)?' <span class="tag fold">折</span>':''}</td><td>${st}</td>
-      <td class="num">${pu?`<img src="${pu}" style="width:34px;height:34px;object-fit:cover;border-radius:7px;cursor:zoom-in" data-zoom="${pu}">`:''}</td></tr>`;
+      <td class="num">${pu?`<img src="${pu}" onerror="imgAlt(this)" style="width:34px;height:34px;object-fit:cover;border-radius:7px;cursor:zoom-in" data-zoom="${pu}">`:''}</td></tr>`;
   }));
   $('#todayCard').innerHTML = `<h2>今天大家的狀況</h2><table><tbody>${rows.join('')}</tbody></table>`;
   bindZoom($('#todayCard'));
@@ -829,8 +837,8 @@ async function renderRecs(){
       </div>
       ${r.note?`<div class="muted" style="margin-top:6px">📝 ${r.note}</div>`:''}
       ${(pi||po)?`<div class="shots">
-        ${pi?`<figure><img src="${pi}" data-zoom="${pi}"><figcaption>上班</figcaption></figure>`:''}
-        ${po?`<figure><img src="${po}" data-zoom="${po}"><figcaption>下班</figcaption></figure>`:''}
+        ${pi?`<figure><img src="${pi}" onerror="imgAlt(this)" data-zoom="${pi}"><figcaption>上班</figcaption></figure>`:''}
+        ${po?`<figure><img src="${po}" onerror="imgAlt(this)" data-zoom="${po}"><figcaption>下班</figcaption></figure>`:''}
       </div>`:''}
     </div>`;
   }));
@@ -871,8 +879,8 @@ function editRecord(ds,emp){
   };
   $('#sheet').querySelector('[data-del]').onclick = async ()=>{
     if(!confirm('確定刪除這天的紀錄？照片也會一起刪掉。')) return;
-    if(r.inPhoto) await idbDel('photos',r.inPhoto);
-    if(r.outPhoto) await idbDel('photos',r.outPhoto);
+    if(r.inPhoto && r.inPhoto.indexOf('gd:')!==0) await idbDel('photos',r.inPhoto);
+    if(r.outPhoto && r.outPhoto.indexOf('gd:')!==0) await idbDel('photos',r.outPhoto);
     delete S.records[k]; save(); closeSheet(); renderAll(); toast('已刪除');
   };
 }
