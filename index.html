@@ -216,6 +216,7 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <div class="row" style="margin-top:10px;gap:8px">
         <button class="mini" id="btnNoPhoto">不拍照直接打卡</button>
         <button class="mini" id="btnFixToday">手動修改今天</button>
+        <button class="mini" id="btnFixPast">補登以前的</button>
       </div>
     </div>
     <div class="card" id="todayCard"></div>
@@ -258,6 +259,8 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <input type="month" id="recMonth" style="flex:1 1 140px">
         <select id="recWho" style="flex:1 1 120px"></select>
       </div>
+      <button class="btn ghost" id="btnAddPunch" style="margin-top:10px">＋ 補登以前的打卡</button>
+      <div class="hint">忘了打卡、或哪天根本沒開網站，用這個補：選人、選日期，填上下班時間就好。</div>
     </div>
     <div id="recList"></div>
   </section>
@@ -675,6 +678,26 @@ $('#btnNoPhoto').onclick = ()=>{
   $('#sheet').querySelectorAll('[data-np]').forEach(b=>b.onclick=()=>{ closeSheet(); doPunch(b.dataset.np,false); });
 };
 $('#btnFixToday').onclick = ()=>editRecord(todayStr(), curEmp);
+$('#btnFixPast').onclick = ()=>pickDayToEdit();
+$('#btnAddPunch').onclick = ()=>pickDayToEdit();
+
+/** 補登：先選人跟日期，再開那天的打卡編輯 */
+function pickDayToEdit(){
+  const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  const d = new Date(); d.setDate(d.getDate()-1);
+  openSheet(`<h3>補登打卡</h3>
+    <div class="muted">誰的班</div><select id="pkWho">${opts}</select>
+    <div style="margin-top:10px"><div class="muted">哪一天</div><input type="date" id="pkDate" value="${dStr(d)}" max="${todayStr()}"></div>
+    <div class="hint">選好之後會打開那天的紀錄，填上下班時間、休息、折備品、抵用都可以。</div>
+    <div class="grid2" style="margin-top:12px"><button class="btn" data-go>下一步</button><button class="btn ghost" data-close>取消</button></div>`);
+  $('#sheet').querySelector('#pkWho').value = curEmp;
+  $('#sheet').querySelector('[data-go]').onclick = ()=>{
+    const emp = $('#pkWho').value, ds = $('#pkDate').value;
+    if(!ds){ toast('請選日期'); return; }
+    closeSheet();
+    setTimeout(()=>editRecord(ds, emp), 60);
+  };
+}
 $('#foldChk').onchange = ()=>{
   const ds = todayStr(), k = key(ds,curEmp);
   const sh = S.shifts[k] || {};
@@ -778,14 +801,21 @@ function editDay(ds){
     const sh = S.shifts[key(ds,e.id)]||{};
     return `<div class="card" style="box-shadow:none;margin-bottom:10px">
       <div class="row spread"><strong>${e.name}</strong>
-        <label class="chk" style="padding:6px 10px"><input type="checkbox" data-off="${e.id}" ${sh.off?'checked':''}><span>休假</span></label></div>
+        <div class="row" style="gap:6px">
+          <button class="mini" data-punch="${e.id}">補打卡</button>
+          <label class="chk" style="padding:6px 10px"><input type="checkbox" data-off="${e.id}" ${sh.off?'checked':''}><span>休假</span></label>
+        </div></div>
       <div class="row" style="gap:8px;margin-top:8px">
         <div style="flex:1"><div class="muted">上班時間</div><input type="time" data-start="${e.id}" value="${sh.start||''}"></div>
         <label class="chk" style="flex:1"><input type="checkbox" data-fold="${e.id}" ${sh.fold?'checked':''}><span>當晚折備品</span></label>
       </div></div>`;
   }).join('');
   openSheet(`<h3>${labelDate(ds)} 排班</h3>${body}
+    <div class="hint" style="margin-bottom:10px">「補打卡」是填那天實際的上下班時間；上面的「上班時間」只是預定幾點上工。</div>
     <div class="grid2"><button class="btn" data-save>儲存排班</button><button class="btn ghost" data-close>取消</button></div>`);
+  $('#sheet').querySelectorAll('[data-punch]').forEach(b=>b.onclick=()=>{
+    closeSheet(); editRecord(ds, b.dataset.punch);
+  });
   $('#sheet').querySelector('[data-save]').onclick = ()=>{
     S.employees.forEach(e=>{
       const off = $(`#sheet [data-off="${e.id}"]`).checked;
@@ -852,6 +882,7 @@ $('#recWho').onchange = renderRecs;
 function editRecord(ds,emp){
   const k = key(ds,emp), r = S.records[k] || {date:ds, emp, breakMin:0, fold:null, note:''};
   openSheet(`<h3>${labelDate(ds)} · ${empName(emp)}</h3>
+    <div class="hint" style="margin-top:-8px;margin-bottom:10px">${ds === todayStr() ? '今天' : '補登 ' + ds.replace(/-/g,'/')}</div>
     <div class="row" style="gap:8px">
       <div style="flex:1"><div class="muted">上班</div><input type="time" id="edIn" value="${r.in?hm(r.in):''}"></div>
       <div style="flex:1"><div class="muted">下班</div><input type="time" id="edOut" value="${r.out?hm(r.out):''}"></div>
