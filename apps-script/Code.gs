@@ -45,6 +45,10 @@ function doGet(e) {
     if (p.action === 'state') return json({ ok: true, state: readState() });
     if (p.action === 'ping') return json({ ok: true, ping: 'pong', now: nowIso() });
     if (p.action === 'diag') return json({ ok: true, diag: diagnose() });
+    if (p.action === 'richmenu') {                       // 需要通關密語，避免別人亂重建選單
+      if (p.key !== P.getProperty('WEB_KEY')) return json({ ok: false, error: '通關密語不對' });
+      return json({ ok: true, result: setupRichMenu() });
+    }
     return json({ ok: true, hint: '這是打卡機器人的後端，請從 LINE 或排班網站使用。' });
   } catch (err) {
     return json({ ok: false, error: String(err && err.message || err) });   // 出錯要講人話，不要回 HTML
@@ -554,6 +558,7 @@ function setupRichMenu() {
   if (set.getResponseCode() >= 300) throw new Error('設定預設選單失敗：' + set.getContentText());
 
   console.log('圖文選單建好了 ✅ richMenuId = ' + id);
+  return '圖文選單建好了，richMenuId = ' + id;
 }
 
 /** 設定檢查：在編輯器執行這個，看看每一項是不是都通 */
