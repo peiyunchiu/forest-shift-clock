@@ -157,6 +157,15 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px}
 .empty{text-align:center;color:var(--muted);padding:26px 10px;font-size:14px}
+.badge{display:inline-block;min-width:16px;padding:0 4px;margin-left:5px;border-radius:999px;
+  background:var(--danger);color:#fff;font-size:10px;line-height:16px;text-align:center;font-weight:700}
+.leaf{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:var(--card)}
+.leaf.pending{border-color:var(--warn)}
+.leaf .who{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.st{font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600}
+.st.pending{background:var(--warn-soft);color:var(--warn)}
+.st.approved{background:var(--brand-soft);color:var(--brand-ink)}
+.st.rejected{background:var(--danger-soft);color:var(--danger)}
 .modetab{flex:1}
 .modetab.on{background:var(--brand-soft);border-color:var(--brand);color:var(--brand-ink);font-weight:600}
 .syncdot{border:0;background:transparent;font-size:15px;cursor:pointer;padding:0 2px;line-height:1}
@@ -185,6 +194,7 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <button data-tab="recs">紀錄</button>
       <button data-tab="stats">統計</button>
       <button data-tab="bank">折抵帳戶</button>
+      <button data-tab="leave">請假<span class="badge" id="leaveBadge" hidden></span></button>
       <button data-tab="setup">設定</button>
     </nav>
   </header>
@@ -295,6 +305,46 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <select id="bankWho" style="flex:1 1 120px"></select>
       </div>
       <div id="bankList"></div>
+    </div>
+  </section>
+
+  <!-- ============ 請假 ============ -->
+  <section id="tab-leave">
+    <div class="card">
+      <h2>我要請假</h2>
+      <div class="muted">誰請假</div><select id="lvWho"></select>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <div style="flex:1"><div class="muted">從哪天</div><input type="date" id="lvFrom"></div>
+        <div style="flex:1"><div class="muted">到哪天</div><input type="date" id="lvTo"></div>
+      </div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <div style="flex:1"><div class="muted">假別</div>
+          <select id="lvType">
+            <option value="補休">補休（從折備品帳戶扣）</option>
+            <option value="特休">特休</option>
+            <option value="事假">事假</option>
+            <option value="病假">病假</option>
+            <option value="其他">其他</option>
+          </select></div>
+        <div style="flex:1"><div class="muted">全天還半天</div>
+          <select id="lvHalf"><option value="0">全天</option><option value="1">半天</option></select></div>
+      </div>
+      <div style="margin-top:10px"><div class="muted">原因（可不填）</div>
+        <input type="text" id="lvReason" placeholder="例如：家裡有事"></div>
+      <div id="lvHint" class="hint"></div>
+      <button class="btn" id="btnLeaveSubmit" style="margin-top:12px">送出申請</button>
+    </div>
+
+    <div class="card">
+      <div class="row spread" style="margin-bottom:10px">
+        <h2 style="margin:0">申請紀錄</h2>
+        <select id="lvFilter" style="width:auto">
+          <option value="all">全部</option>
+          <option value="pending">只看待審核</option>
+          <option value="mine">只看我的</option>
+        </select>
+      </div>
+      <div id="leaveList"></div>
     </div>
   </section>
 
@@ -467,6 +517,7 @@ const DEFAULT = {
   employees:[{id:'e1',name:'Chloe'},{id:'e2',name:'Kobe'},{id:'e3',name:'夥伴 A'}],
   settings:{base:7, cut:1},   // cut = 折備品每次入帳幾小時
   shifts:{},   // "YYYY-MM-DD|empId" -> {start, fold, off}
+  leaves:{},   // id -> {id, emp, from, to, type, half, reason, status, createdAt, decidedAt, decidedBy}
   records:{}   // "YYYY-MM-DD|empId" -> {date, emp, in, out, breakMin, fold, useMin, inPhoto, outPhoto, note}
 };
 let S = JSON.parse(JSON.stringify(DEFAULT));
@@ -483,6 +534,7 @@ async function load(){
   const s = await idbGet('kv','state');
   if(s){ S = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), s); S.settings = Object.assign({base:7,cut:1}, s.settings||{}); }
   if(!S.employees.length) S.employees = JSON.parse(JSON.stringify(DEFAULT.employees));
+  if(!S.leaves) S.leaves = {};
   curEmp = S.employees[0].id;
 }
 /* ---------------- 雲端同步（LINE 打卡共用同一本帳）---------------- */
@@ -491,11 +543,11 @@ let S0 = null;           // 上次跟雲端一致的快照
 let pushTimer = null, syncing = false, lastErr = '';
 
 const clone = o => JSON.parse(JSON.stringify(o));
-const core  = s => ({employees:s.employees, settings:s.settings, shifts:s.shifts, records:s.records});
+const core  = s => ({employees:s.employees, settings:s.settings, shifts:s.shifts, records:s.records, leaves:s.leaves||{}});
 
 function diffPatches(a,b){
   const out = [];
-  [['records','record'],['shifts','shift']].forEach(([field,type])=>{
+  [['records','record'],['shifts','shift'],['leaves','leave']].forEach(([field,type])=>{
     const A = a[field]||{}, B = b[field]||{};
     Object.keys(B).forEach(k=>{ if(JSON.stringify(A[k]) !== JSON.stringify(B[k])) out.push({type, key:k, value:B[k]}); });
     Object.keys(A).forEach(k=>{ if(!(k in B)) out.push({type, key:k, value:null}); });
@@ -520,6 +572,7 @@ function b64dec(b64){
 function applyPatchLocal(st, p){
   if(p.type === 'record'){ if(p.value === null) delete st.records[p.key]; else st.records[p.key] = p.value; }
   else if(p.type === 'shift'){ if(p.value === null) delete st.shifts[p.key]; else st.shifts[p.key] = p.value; }
+  else if(p.type === 'leave'){ st.leaves = st.leaves || {}; if(p.value === null) delete st.leaves[p.key]; else st.leaves[p.key] = p.value; }
   else if(p.type === 'settings') st.settings = p.value;
   else if(p.type === 'employees'){
     const by = {}; (st.employees||[]).forEach(e=>{ by[e.id] = e.lineUserId; });
@@ -541,7 +594,7 @@ async function ghRead(){
   return {state: st, sha: meta.sha};
 }
 function blankRemote(){
-  return { version:1, updatedAt:'', employees: clone(S.employees), settings: clone(S.settings), shifts:{}, records:{} };
+  return { version:1, updatedAt:'', employees: clone(S.employees), settings: clone(S.settings), shifts:{}, records:{}, leaves:{} };
 }
 async function githubCall(payload){
   if(payload.action === 'state'){
@@ -586,7 +639,7 @@ async function cloudCall(payload){
 function adoptRemote(state){
   if(!state) return;
   S.employees = state.employees; S.settings = state.settings;
-  S.shifts = state.shifts || {}; S.records = state.records || {};
+  S.shifts = state.shifts || {}; S.records = state.records || {}; S.leaves = state.leaves || {};
   if(!S.employees.find(e=>e.id===curEmp)) curEmp = S.employees[0].id;
   S0 = clone(core(S));
   idbPut('kv','state',clone(S));
@@ -671,10 +724,14 @@ function usedMin(ds,emp){                     // 這天動用帳戶抵掉的時�
   const r = S.records[key(ds,emp)];
   return Math.max(0, Math.round((r && r.useMin) || 0));
 }
+function leaveMin(ds,emp){                    // 這天請假扣掉的時數（特休／事假／病假…）
+  const r = S.records[key(ds,emp)];
+  return Math.max(0, Math.round((r && r.leaveMin) || 0));
+}
 function targetMin(ds,emp){
   const sh = S.shifts[key(ds,emp)];
   if(sh && sh.off) return 0;
-  return Math.max(0, S.settings.base * 60 - usedMin(ds,emp));
+  return Math.max(0, S.settings.base * 60 - usedMin(ds,emp) - leaveMin(ds,emp));
 }
 function dayEntries(){    // 所有算得上數的日子：打卡紀錄 ∪ 排班排了折備品且日子已經到的班
   const out = {};
@@ -709,7 +766,7 @@ function dayCalc(ds,emp){
   const t = targetMin(ds,emp);
   const w = workedMin(r);
   return { rec:r, target:t, worked:w, over:Math.max(0,w-t), short:(r&&r.in&&r.out)?Math.max(0,t-w):0,
-           fold:foldMin(ds,emp), used:usedMin(ds,emp) };
+           fold:foldMin(ds,emp), used:usedMin(ds,emp), leave:leaveMin(ds,emp) };
 }
 
 /* ---------------- 照片 ---------------- */
@@ -836,7 +893,8 @@ async function renderPunch(){
   $('#foldCutLabel').textContent = S.settings.cut;
   const off = (S.shifts[key(ds,curEmp)]||{}).off;
   $('#targetLabel').textContent = off ? '休假' : hrs(c.target)+' h';
-  $('#targetCaption').textContent = c.used ? `今日應上班（已抵 ${hrs(c.used)}h）` : '今日應上班';
+  $('#targetCaption').textContent = c.leave ? `今日應上班（請假 ${hrs(c.leave)}h）`
+    : c.used ? `今日應上班（已抵 ${hrs(c.used)}h）` : '今日應上班';
   const bk = bank(curEmp);
   const strip = $('#punchBank');
   strip.className = 'bank-strip' + (bk.left>0 ? '' : ' low');
@@ -966,6 +1024,7 @@ async function renderRecs(){
         <strong>${labelDate(r.date)}</strong><span class="tag">${empName(r.emp)}</span>
         ${isFold(r.date,r.emp)?`<span class="tag fold">折備品 +${hrs(c.fold)}h</span>`:''}
         ${c.used?`<span class="tag">抵用 ${hrs(c.used)}h</span>`:''}
+        ${c.leave?`<span class="tag">請假 ${hrs(c.leave)}h</span>`:''}
         ${c.over?`<span class="tag ot">加班 ${hrs(c.over)}h</span>`:''}
         ${c.short?`<span class="tag short">少 ${hrs(c.short)}h</span>`:''}
         <button class="mini" style="margin-left:auto" data-edit="${r.date}|${r.emp}">修改</button>
@@ -1175,6 +1234,135 @@ $('#btnUse').onclick = ()=>{
   };
 };
 
+/* ---------------- 請假 ---------------- */
+const LEAVE_HALF = 0.5;
+const isBoss = id => !!(S.employees.find(e=>e.id===id)||{}).boss;
+const anyBoss = () => S.employees.some(e=>e.boss);
+
+function daysBetween(from,to){
+  const out = [], d = new Date(from+'T00:00:00'), end = new Date(to+'T00:00:00');
+  let n = 0;
+  while(d <= end && n < 400){ out.push(dStr(d)); d.setDate(d.getDate()+1); n++; }
+  return out;
+}
+/** 這張假單總共幾分鐘 */
+function leaveTotalMin(lv){
+  const per = S.settings.base * 60 * (lv.half ? LEAVE_HALF : 1);
+  return Math.round(daysBetween(lv.from, lv.to).length * per);
+}
+/** 核准 → 把時數寫進每一天；取消核准 → 清掉 */
+function applyLeave(lv, on){
+  const per = Math.round(S.settings.base * 60 * (lv.half ? LEAVE_HALF : 1));
+  daysBetween(lv.from, lv.to).forEach(ds=>{
+    const k = key(ds, lv.emp), sh = S.shifts[k] || {};
+    const r = S.records[k] || {date:ds, emp:lv.emp, breakMin:0, useMin:0, note:''};
+    if(on){
+      if(lv.type === '補休'){ r.useMin = Math.max(0, Math.round(r.useMin||0)) + per; }   // 從折備品帳戶扣
+      else { r.leaveMin = Math.max(0, Math.round(r.leaveMin||0)) + per; }
+      r.leaveId = lv.id;
+      S.records[k] = r;
+    }else{
+      if(lv.type === '補休') r.useMin = Math.max(0, Math.round(r.useMin||0) - per);
+      else r.leaveMin = Math.max(0, Math.round(r.leaveMin||0) - per);
+      if(r.leaveId === lv.id) delete r.leaveId;
+      if(!r.in && !r.out && !r.useMin && !r.leaveMin && !r.fold && !sh.fold) delete S.records[k];
+      else S.records[k] = r;
+    }
+  });
+}
+
+function renderLeaveForm(){
+  const t = $('#lvType').value, emp = $('#lvWho').value;
+  const from = $('#lvFrom').value, to = $('#lvTo').value;
+  const hint = $('#lvHint');
+  if(t === '補休' && from && to){
+    const days = daysBetween(from, to).length;
+    const need = Math.round(S.settings.base * 60 * ($('#lvHalf').value === '1' ? LEAVE_HALF : 1) * days);
+    const left = bank(emp).left;
+    hint.innerHTML = `這張假單要用掉 <b>${hrs(need)}</b> 小時，${empName(emp)} 的帳戶目前有 <b>${hrs(left)}</b> 小時`
+      + (need > left ? ' <span style="color:var(--danger)">（不夠，核准後帳戶會變負的）</span>' : ' ✅');
+  }else if(!anyBoss()){
+    hint.innerHTML = '⚠️ 還沒指定誰可以核准請假。到「設定 → 員工」把主管勾起來，不然假單會一直卡在待審核。';
+  }else{
+    hint.textContent = '送出後要等主管核准，核准了才會套到班表上。';
+  }
+}
+['#lvType','#lvWho','#lvFrom','#lvTo','#lvHalf'].forEach(sel=>{
+  const el = $(sel); if(el) el.onchange = renderLeaveForm;
+});
+
+$('#btnLeaveSubmit').onclick = ()=>{
+  const emp = $('#lvWho').value, from = $('#lvFrom').value, to = $('#lvTo').value;
+  if(!from || !to){ toast('請選日期'); return; }
+  if(to < from){ toast('結束日不能比開始日早'); return; }
+  const lv = {
+    id: uid(), emp, from, to,
+    type: $('#lvType').value,
+    half: $('#lvHalf').value === '1',
+    reason: $('#lvReason').value.trim(),
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+  S.leaves[lv.id] = lv; save(); $('#lvReason').value = '';
+  renderAll();
+  toast(anyBoss() ? '假單送出了，等主管核准' : '假單送出了（還沒設定主管，記得去設定指定）');
+};
+
+function decideLeave(id, ok){
+  const lv = S.leaves[id]; if(!lv) return;
+  const me = curEmp;
+  if(!isBoss(me)){ toast('只有主管可以核准，先在「設定 → 員工」把自己勾成主管'); return; }
+  if(lv.status === 'approved' && !ok) applyLeave(lv, false);      // 從核准改駁回 → 收回
+  if(lv.status !== 'approved' && ok)  applyLeave(lv, true);
+  lv.status = ok ? 'approved' : 'rejected';
+  lv.decidedAt = new Date().toISOString();
+  lv.decidedBy = me;
+  save(); renderAll();
+  toast(ok ? '已核准，班表已經套上去了' : '已駁回');
+}
+
+function renderLeave(){
+  const filter = $('#lvFilter').value;
+  const list = Object.values(S.leaves).sort((a,b)=> a.createdAt < b.createdAt ? 1 : -1)
+    .filter(lv => filter === 'all' ? true : filter === 'pending' ? lv.status === 'pending' : lv.emp === curEmp);
+  const pending = Object.values(S.leaves).filter(lv=>lv.status === 'pending').length;
+  const badge = $('#leaveBadge');
+  badge.hidden = !pending; badge.textContent = pending;
+
+  $('#leaveList').innerHTML = list.length ? list.map(lv=>{
+    const days = daysBetween(lv.from, lv.to).length;
+    const stTxt = {pending:'待審核', approved:'已核准', rejected:'已駁回'}[lv.status];
+    const range = lv.from === lv.to ? labelDate(lv.from) : `${lv.from.replace(/-/g,'/')} ～ ${lv.to.replace(/-/g,'/')}`;
+    return `<div class="leaf ${lv.status}">
+      <div class="who">
+        <strong>${empName(lv.emp)}</strong>
+        <span class="tag">${lv.type}</span>
+        ${lv.half ? '<span class="tag">半天</span>' : ''}
+        <span class="st ${lv.status}">${stTxt}</span>
+      </div>
+      <div>${range}<span class="muted"> ・${days} 天 ・共 ${hrs(leaveTotalMin(lv))} 小時</span></div>
+      ${lv.reason ? `<div class="muted" style="margin-top:4px">📝 ${lv.reason}</div>` : ''}
+      ${lv.status !== 'pending' ? `<div class="muted" style="margin-top:4px">${stTxt} by ${empName(lv.decidedBy)}</div>` : ''}
+      <div class="row" style="gap:8px;margin-top:10px">
+        ${lv.status === 'pending' && isBoss(curEmp) ? `<button class="mini" data-ok="${lv.id}">✅ 同意</button><button class="mini" data-no="${lv.id}">✖️ 駁回</button>` : ''}
+        ${lv.status === 'approved' && isBoss(curEmp) ? `<button class="mini" data-no="${lv.id}">收回核准</button>` : ''}
+        ${lv.status === 'pending' && !isBoss(curEmp) ? '<span class="muted">等主管處理</span>' : ''}
+        <button class="mini" style="margin-left:auto" data-del="${lv.id}">刪除</button>
+      </div></div>`;
+  }).join('') : '<div class="empty">還沒有任何請假申請。</div>';
+
+  $('#leaveList').querySelectorAll('[data-ok]').forEach(b=>b.onclick=()=>decideLeave(b.dataset.ok, true));
+  $('#leaveList').querySelectorAll('[data-no]').forEach(b=>b.onclick=()=>decideLeave(b.dataset.no, false));
+  $('#leaveList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
+    const lv = S.leaves[b.dataset.del];
+    if(!confirm('刪除這張假單？' + (lv.status === 'approved' ? '（已經套到班表上的時數會一起收回）' : ''))) return;
+    if(lv.status === 'approved') applyLeave(lv, false);
+    delete S.leaves[b.dataset.del]; save(); renderAll(); toast('已刪除');
+  });
+  renderLeaveForm();
+}
+$('#lvFilter').onchange = renderLeave;
+
 /* ---------------- 設定 ---------------- */
 function renderSetup(){
   $('#cloudUrl').value = (CLOUD && CLOUD.url) || '';
@@ -1192,7 +1380,14 @@ function renderSetup(){
   $('#setCut').value = S.settings.cut;
   $('#empEdit').innerHTML = S.employees.map((e,i)=>`<div class="row" style="gap:8px;margin-bottom:8px">
     <input type="text" value="${e.name.replace(/"/g,'&quot;')}" data-name="${e.id}">
+    <label class="chk ${e.boss?'on':''}" style="padding:6px 10px;white-space:nowrap" title="可以核准請假">
+      <input type="checkbox" data-boss="${e.id}" ${e.boss?'checked':''}><span>主管</span></label>
     <button class="mini" data-rm="${e.id}" ${S.employees.length<=1?'disabled':''}>移除</button></div>`).join('');
+  $('#empEdit').querySelectorAll('[data-boss]').forEach(cb=>cb.onchange=()=>{
+    const e = S.employees.find(x=>x.id===cb.dataset.boss);
+    e.boss = cb.checked; save(); renderAll();
+    toast(cb.checked ? `${e.name} 可以核准請假了` : `${e.name} 不再是主管`);
+  });
   $('#empEdit').querySelectorAll('[data-name]').forEach(inp=>inp.onchange=()=>{
     const e = S.employees.find(x=>x.id===inp.dataset.name);
     e.name = inp.value.trim() || e.name; save(); renderAll();
@@ -1334,17 +1529,20 @@ $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='setup') renderSetup();
   if(b.dataset.tab==='sched') renderCal();
   if(b.dataset.tab==='bank') renderBank();
+  if(b.dataset.tab==='leave') renderLeave();
 });
 
-function renderAll(){ fillSelects(); renderWho(); renderPunch(); renderCal(); renderRecs(); renderStats(); renderBank(); renderSetup(); }
+function renderAll(){ fillSelects(); renderWho(); renderPunch(); renderCal(); renderRecs(); renderStats(); renderBank(); renderLeave(); renderSetup(); }
 function fillSelects(){
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
-  const bw = $('#bulkWho'), rw = $('#recWho'), kw = $('#bankWho');
-  const bwv = bw.value, rwv = rw.value, kwv = kw.value;
+  const bw = $('#bulkWho'), rw = $('#recWho'), kw = $('#bankWho'), lw = $('#lvWho');
+  const bwv = bw.value, rwv = rw.value, kwv = kw.value, lwv = lw.value;
   bw.innerHTML = opts;
   rw.innerHTML = `<option value="all">全部員工</option>` + opts;
   kw.innerHTML = `<option value="all">全部員工</option>` + opts;
+  lw.innerHTML = opts;
   if(bwv) bw.value = bwv; if(rwv) rw.value = rwv; if(kwv) kw.value = kwv;
+  lw.value = lwv || curEmp;
 }
 function tick(){
   const n = new Date();
@@ -1377,6 +1575,7 @@ async function storageProbe(){
   const mo = monStr(new Date());
   $('#recMonth').value = mo; $('#statMonth').value = mo;
   $('#bulkFrom').value = todayStr(); $('#bulkTo').value = todayStr();
+  $('#lvFrom').value = todayStr(); $('#lvTo').value = todayStr();
   fillSelects(); renderAll(); tick(); setInterval(tick,1000);
   setInterval(()=>{ if($('#tab-punch').classList.contains('on')) renderPunch(); }, 60000);
   paintSync();

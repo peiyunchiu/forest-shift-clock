@@ -72,6 +72,9 @@ function applyPatch(s, p) {
     if (p.value === null) delete s.records[p.key]; else s.records[p.key] = p.value;
   } else if (p.type === 'shift') {
     if (p.value === null) delete s.shifts[p.key]; else s.shifts[p.key] = p.value;
+  } else if (p.type === 'leave') {
+    s.leaves = s.leaves || {};
+    if (p.value === null) delete s.leaves[p.key]; else s.leaves[p.key] = p.value;
   } else if (p.type === 'settings') {
     s.settings = p.value;
   } else if (p.type === 'employees') {
@@ -274,6 +277,7 @@ function todayReport(s, ds) {
     }
     if (fm) bits.push('折備品 +' + hrs(fm) + 'h');
     if (r && r.useMin) bits.push('抵用 ' + hrs(r.useMin) + 'h');
+    if (r && r.leaveMin) bits.push('請假 ' + hrs(r.leaveMin) + 'h');
     lines.push('・' + e.name + '：' + bits.join('，'));
   });
   return lines.join('\n');
@@ -349,7 +353,9 @@ function workedMin(r) {
 }
 function targetMin(r, sh, settings) {
   if (sh && sh.off) return 0;
-  return Math.max(0, (settings.base || 7) * 60 - Math.max(0, Math.round((r && r.useMin) || 0)));
+  var used  = Math.max(0, Math.round((r && r.useMin) || 0));
+  var leave = Math.max(0, Math.round((r && r.leaveMin) || 0));   // 請假（特休／事假／病假）
+  return Math.max(0, (settings.base || 7) * 60 - used - leave);
 }
 function foldMinOf(r, settings) {
   if (r && r.foldMins != null) return Math.max(0, Math.round(r.foldMins));
@@ -436,7 +442,8 @@ function blankState() {
     employees: [{ id: 'e1', name: 'Chloe' }, { id: 'e2', name: 'Kobe' }, { id: 'e3', name: '夥伴 A' }],
     settings: { base: 7, cut: 1 },
     shifts: {},
-    records: {}
+    records: {},
+    leaves: {}
   };
 }
 function normalize(s) {
@@ -447,6 +454,7 @@ function normalize(s) {
   if (s.settings.cut == null) s.settings.cut = 1;
   s.shifts = s.shifts || {};
   s.records = s.records || {};
+  s.leaves = s.leaves || {};
   return s;
 }
 
