@@ -1568,6 +1568,33 @@ async function storageProbe(){
   }
 }
 
+/** 網址帶 #cloud=... 時自動接上雲端（給手機用，不用手打那串網址） */
+async function applyCloudFromLink(){
+  const m = location.hash.match(/cloud=([^&]+)/);
+  if(!m) return false;
+  let cfg;
+  try{ cfg = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(m[1]).replace(/-/g,'+').replace(/_/g,'/'))))); }
+  catch(e){ return false; }
+  history.replaceState(null,'',location.pathname+location.search);   // 別讓密語留在網址列
+  if(!cfg || !cfg.url) return false;
+  if(CLOUD && CLOUD.url === cfg.url) return false;                   // 已經是同一個就不用再問
+  if(!confirm('要把這台裝置連上雲端嗎？\n連上之後，打卡紀錄會跟 LINE 和其他裝置共用同一份。')) return false;
+  CLOUD = cfg;
+  try{
+    const data = await cloudCall({action:'state'});
+    adoptRemote(data.state);
+    await idbPut('kv','cloud', CLOUD);
+    markEverCloud();
+    lastErr=''; renderAll(); paintSync();
+    toast('這台裝置已連上雲端 ☁️');
+    return true;
+  }catch(err){
+    CLOUD = null; paintSync();
+    alert('連不上雲端：'+err.message+'\n\n連結可能過期了，跟 Chloe 要一個新的。');
+    return false;
+  }
+}
+
 (async function init(){
   await storageProbe();
   setTimeout(guardCloud, 1500);
@@ -1578,6 +1605,7 @@ async function storageProbe(){
   $('#lvFrom').value = todayStr(); $('#lvTo').value = todayStr();
   fillSelects(); renderAll(); tick(); setInterval(tick,1000);
   setInterval(()=>{ if($('#tab-punch').classList.contains('on')) renderPunch(); }, 60000);
+  await applyCloudFromLink();
   paintSync();
   if(CLOUD){
     S0 = clone(core(S));
