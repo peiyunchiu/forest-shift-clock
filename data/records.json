@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-17T17:33:55+08:00",
+ "updatedAt": "2026-09-17T17:38:41+08:00",
  "employees": [
   {
    "id": "e1",
@@ -9,7 +9,8 @@
   },
   {
    "id": "e2",
-   "name": "Kobe"
+   "name": "Kobe",
+   "boss": true
   },
   {
    "id": "e3",
