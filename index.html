@@ -591,6 +591,26 @@ function adoptRemote(state){
   S0 = clone(core(S));
   idbPut('kv','state',clone(S));
 }
+function markEverCloud(){
+  try{ localStorage.setItem('fsc:everCloud','1'); }catch(e){}
+  idbPut('kv','everCloud', {at: new Date().toISOString()});
+}
+async function wasEverCloud(){
+  try{ if(localStorage.getItem('fsc:everCloud')) return true; }catch(e){}
+  return !!(await idbGet('kv','everCloud'));
+}
+/** 曾經連過雲端、現在卻沒連上 → 大聲講，不要安靜地退回只存本機 */
+async function guardCloud(){
+  const w = $('#storeWarn');
+  if(CLOUD && !lastErr){ if(w.dataset.owner === 'cloud'){ w.hidden = true; w.dataset.owner=''; } return; }
+  if(!(await wasEverCloud())) return;
+  w.dataset.owner = 'cloud';
+  w.hidden = false;
+  w.innerHTML = !CLOUD
+    ? '⚠️ <b>雲端連線不見了</b>，現在打的卡只會存在這台裝置。<br>已經存進 GitHub 的不會消失，但請到「設定 → 雲端同步」重新貼一次 token，不然又會重演上次的事。'
+    : '⚠️ <b>同步失敗中：' + lastErr + '</b><br>現在打的卡只存在這台裝置。token 可能過期或被清掉了，到「設定 → 雲端同步」重貼一次。';
+}
+
 async function cloudSync(showToast){
   if(!CLOUD || syncing) return;
   if(CLOUD.mode !== 'github' && !CLOUD.url) return;
@@ -601,12 +621,13 @@ async function cloudSync(showToast){
                                 : await cloudCall({action:'state'});
     adoptRemote(data.state);
     lastErr = '';
+    markEverCloud();
     renderAll();
     if(showToast) toast(patches.length ? `已同步（送出 ${patches.length} 筆更新）` : '已是最新');
   }catch(err){
     lastErr = err.message;
     if(showToast) toast('同步失敗：'+err.message);
-  }finally{ syncing = false; paintSync(); }
+  }finally{ syncing = false; paintSync(); guardCloud(); }
 }
 function schedulePush(){
   if(!CLOUD) return;
@@ -754,7 +775,8 @@ async function doPunch(kind, withPhoto){
   }
   r.fold = $('#foldChk').checked;
   S.records[k] = r; save();
-  toast(kind==='in' ? `${empName(curEmp)} 上班打卡 ${hm(now)} ✅` : `${empName(curEmp)} 下班打卡 ${hm(now)} ✅`);
+  const warn = (await wasEverCloud()) && (!CLOUD || lastErr) ? '（⚠️ 只存在這台裝置）' : '';
+  toast((kind==='in' ? `${empName(curEmp)} 上班打卡 ${hm(now)} ✅` : `${empName(curEmp)} 下班打卡 ${hm(now)} ✅`) + warn);
   renderPunch(); renderCal();
 }
 $('#btnIn').onclick = ()=>doPunch('in', true);
@@ -1229,7 +1251,10 @@ $('#btnCloudOn').onclick = async ()=>{
 };
 $('#btnCloudOff').onclick = async ()=>{
   if(!confirm('改回只存這台裝置？雲端上的紀錄不會刪，只是這台不再同步。')) return;
-  CLOUD = null; S0 = null; await idbDel('kv','cloud'); paintSync(); toast('已改回只存這台裝置');
+  CLOUD = null; S0 = null; await idbDel('kv','cloud');
+  try{ localStorage.removeItem('fsc:everCloud'); }catch(e){}
+  await idbDel('kv','everCloud');
+  paintSync(); toast('已改回只存這台裝置');
 };
 
 /* 存檔：網頁版走 Artifact 的下載能力，本機檔案版走一般下載連結 */
@@ -1347,6 +1372,7 @@ async function storageProbe(){
 
 (async function init(){
   await storageProbe();
+  setTimeout(guardCloud, 1500);
   await load();
   const mo = monStr(new Date());
   $('#recMonth').value = mo; $('#statMonth').value = mo;
