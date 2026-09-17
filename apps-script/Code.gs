@@ -35,14 +35,43 @@ function doPost(e) {
   }
 
   // 網站傳過來的
-  return json(handleApi(body));
+  try { return json(handleApi(body)); }
+  catch (err) { return json({ ok: false, error: String(err && err.message || err) }); }
 }
 
 function doGet(e) {
   var p = (e && e.parameter) || {};
-  if (p.action === 'state') return json({ ok: true, state: readState() });
-  if (p.action === 'ping') return json({ ok: true, ping: 'pong', now: nowIso() });
-  return json({ ok: true, hint: '這是打卡機器人的後端，請從 LINE 或排班網站使用。' });
+  try {
+    if (p.action === 'state') return json({ ok: true, state: readState() });
+    if (p.action === 'ping') return json({ ok: true, ping: 'pong', now: nowIso() });
+    if (p.action === 'diag') return json({ ok: true, diag: diagnose() });
+    return json({ ok: true, hint: '這是打卡機器人的後端，請從 LINE 或排班網站使用。' });
+  } catch (err) {
+    return json({ ok: false, error: String(err && err.message || err) });   // 出錯要講人話，不要回 HTML
+  }
+}
+
+/** 設定健檢：哪一項沒設好，一看就知道（不會洩漏鑰匙內容） */
+function diagnose() {
+  var out = {};
+  ['LINE_TOKEN','GH_TOKEN','GH_REPO','GH_PATH','WEB_KEY','SITE_URL'].forEach(function (k) {
+    var v = P.getProperty(k);
+    out[k] = !v ? '❌ 沒設定'
+      : (v === '請貼上' ? '❌ 還是預設文字，沒換成真的'
+      : (k === 'LINE_TOKEN' || k === 'GH_TOKEN' ? '✅ 有值（' + v.length + ' 字）' : v));
+  });
+  try {
+    var res = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: ghHeaders(), muteHttpExceptions: true });
+    out.GitHub = res.getResponseCode() < 300 ? '✅ 讀得到'
+      : '❌ HTTP ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 120);
+  } catch (e) { out.GitHub = '❌ ' + e.message; }
+  try {
+    var r2 = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
+      headers: { Authorization: 'Bearer ' + P.getProperty('LINE_TOKEN') }, muteHttpExceptions: true });
+    out.LINE = r2.getResponseCode() < 300 ? '✅ token 有效'
+      : '❌ HTTP ' + r2.getResponseCode() + ' ' + r2.getContentText().slice(0, 120);
+  } catch (e) { out.LINE = '❌ ' + e.message; }
+  return out;
 }
 
 function json(obj) {
