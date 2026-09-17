@@ -187,6 +187,7 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <h1>🌲 靜謐森林屋 · 排班打卡</h1>
       <span class="clock" id="liveClock">--:--</span>
       <button class="syncdot" id="syncDot" title="雲端同步狀態" hidden>☁️</button>
+      <button class="syncdot" id="lockBtn" title="管理模式">🔒</button>
     </div>
     <nav class="tabs" id="tabs">
       <button data-tab="punch" class="on">打卡</button>
@@ -362,6 +363,20 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <h2>員工</h2>
       <div id="empEdit"></div>
       <button class="mini" id="btnAddEmp" style="margin-top:8px">＋ 新增員工</button>
+    </div>
+    <div class="card">
+      <h2>後台密碼</h2>
+      <div id="pinState" class="cloudbar">目前沒設密碼，任何人打開網站都看得到全部功能</div>
+      <div class="row" style="gap:8px;margin-top:10px">
+        <div style="flex:1"><div class="muted">新密碼</div><input type="password" id="pinNew" placeholder="自己想一組"></div>
+        <div style="flex:1"><div class="muted">再打一次</div><input type="password" id="pinNew2" placeholder="確認"></div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <button class="btn" id="btnPinSet">設定密碼</button>
+        <button class="btn ghost" id="btnPinClear">取消密碼</button>
+      </div>
+      <div class="hint">設了之後，沒輸入密碼的人只看得到<b>排班表</b>和<b>請假</b>，改不了設定、看不到統計。密碼用雜湊存，不會存明碼。<br>
+        ⚠️ 打卡資料放在公開的 GitHub repo，所以這個鎖是「防手滑」等級，擋不住刻意要查的人。</div>
     </div>
     <div class="card">
       <h2>雲端同步 — 讓紀錄存進 GitHub</h2>
@@ -675,6 +690,7 @@ async function cloudSync(showToast){
     adoptRemote(data.state);
     lastErr = '';
     markEverCloud();
+    await refreshRole();
     renderAll();
     if(showToast) toast(patches.length ? `已同步（送出 ${patches.length} 筆更新）` : '已是最新');
   }catch(err){
@@ -979,6 +995,19 @@ function editDay(ds){
         <label class="chk" style="flex:1"><input type="checkbox" data-fold="${e.id}" ${sh.fold?'checked':''}><span>當晚折備品</span></label>
       </div></div>`;
   }).join('');
+  if(!ADMIN){
+    const view = S.employees.map(e=>{
+      const sh = S.shifts[key(ds,e.id)]||{};
+      const fm = foldMin(ds,e.id);
+      return `<div class="row spread" style="padding:8px 0;border-bottom:1px solid var(--line)">
+        <strong>${e.name}</strong>
+        <span>${sh.off ? '休假' : (sh.start ? sh.start + ' 上班' : '沒排班')}${fm ? `　🧺 折備品 ${hrs(fm)}h` : ''}</span></div>`;
+    }).join('');
+    openSheet(`<h3>${labelDate(ds)} 班表</h3>${view}
+      <div class="hint" style="margin-top:10px">要改排班請找 Chloe。</div>
+      <button class="btn ghost" style="margin-top:10px" data-close>關閉</button>`);
+    return;
+  }
   openSheet(`<h3>${labelDate(ds)} 排班</h3>${body}
     <div class="hint" style="margin-bottom:10px">「補打卡」是填那天實際的上下班時間；上面的「上班時間」只是預定幾點上工。</div>
     <div class="grid2"><button class="btn" data-save>儲存排班</button><button class="btn ghost" data-close>取消</button></div>`);
@@ -999,6 +1028,7 @@ function editDay(ds){
 
 /* 批次排班 */
 function bulkRange(fn){
+  if(!ADMIN){ toast('只有管理模式能改排班'); return; }
   const emp = $('#bulkWho').value, a = $('#bulkFrom').value, b = $('#bulkTo').value;
   if(!a || !b){ toast('請先選開始與結束日期'); return; }
   let d = new Date(a+'T00:00:00'), end = new Date(b+'T00:00:00'), n = 0;
@@ -1234,6 +1264,63 @@ $('#btnUse').onclick = ()=>{
   };
 };
 
+/* ---------------- 管理模式（後台鎖）---------------- */
+let ADMIN = true;                       // 這台裝置有沒有解鎖後台
+const OPEN_TABS = ['sched','leave'];    // 沒解鎖時看得到的分頁
+
+async function sha256(str){
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function refreshRole(){
+  const need = S.settings.adminHash;
+  if(!need){ ADMIN = true; }                       // 還沒設密碼 → 全開
+  else {
+    const saved = await idbGet('kv','adminOk');
+    ADMIN = saved === need;                        // 密碼改過的話，舊的解鎖就失效
+  }
+  applyRole();
+}
+function applyRole(){
+  document.querySelectorAll('#tabs button').forEach(b=>{
+    b.hidden = !(ADMIN || OPEN_TABS.includes(b.dataset.tab));
+  });
+  const cur = document.querySelector('#tabs button.on');
+  if(cur && cur.hidden) document.querySelector('#tabs button:not([hidden])').click();
+  const lock = $('#lockBtn');
+  lock.textContent = ADMIN ? '🔓' : '🔒';
+  lock.title = ADMIN ? (S.settings.adminHash ? '管理模式（點一下鎖起來）' : '還沒設密碼，到設定可以設') : '點一下輸入密碼進管理模式';
+}
+$('#lockBtn').onclick = async ()=>{
+  if(!S.settings.adminHash){ toast('還沒設密碼，到「設定 → 後台密碼」設一組'); return; }
+  if(ADMIN){
+    await idbDel('kv','adminOk'); ADMIN = false; applyRole(); toast('已鎖起來，這台變成一般模式');
+    return;
+  }
+  const pin = prompt('輸入後台密碼：');
+  if(pin === null) return;
+  if(await sha256(pin) !== S.settings.adminHash){ alert('密碼不對'); return; }
+  await idbPut('kv','adminOk', S.settings.adminHash);
+  ADMIN = true; applyRole(); renderAll(); toast('已進入管理模式 🔓');
+};
+$('#btnPinSet').onclick = async ()=>{
+  const a = $('#pinNew').value, b = $('#pinNew2').value;
+  if(!a){ toast('請輸入密碼'); return; }
+  if(a !== b){ toast('兩次輸入不一樣'); return; }
+  S.settings.adminHash = await sha256(a);
+  await idbPut('kv','adminOk', S.settings.adminHash);
+  save(); $('#pinNew').value=''; $('#pinNew2').value='';
+  ADMIN = true; applyRole(); renderSetup();
+  toast('密碼設好了。其他裝置要重新輸入才進得來');
+};
+$('#btnPinClear').onclick = async ()=>{
+  if(!S.settings.adminHash){ toast('本來就沒有密碼'); return; }
+  if(!confirm('取消密碼？之後任何人打開網站都看得到全部功能。')) return;
+  delete S.settings.adminHash;
+  await idbDel('kv','adminOk');
+  save(); ADMIN = true; applyRole(); renderSetup(); toast('已取消密碼');
+};
+
 /* ---------------- 請假 ---------------- */
 const LEAVE_HALF = 0.5;
 const isBoss = id => !!(S.employees.find(e=>e.id===id)||{}).boss;
@@ -1324,6 +1411,7 @@ function decideLeave(id, ok){
 function renderLeave(){
   const filter = $('#lvFilter').value;
   const list = Object.values(S.leaves).sort((a,b)=> a.createdAt < b.createdAt ? 1 : -1)
+    .filter(lv => ADMIN ? true : lv.emp === curEmp)          // 沒解鎖只看得到自己的假單
     .filter(lv => filter === 'all' ? true : filter === 'pending' ? lv.status === 'pending' : lv.emp === curEmp);
   const pending = Object.values(S.leaves).filter(lv=>lv.status === 'pending').length;
   const badge = $('#leaveBadge');
@@ -1365,6 +1453,13 @@ $('#lvFilter').onchange = renderLeave;
 
 /* ---------------- 設定 ---------------- */
 function renderSetup(){
+  const pinBox = $('#pinState');
+  if(pinBox){
+    pinBox.className = 'cloudbar' + (S.settings.adminHash ? '' : ' bad');
+    pinBox.textContent = S.settings.adminHash
+      ? '✅ 已設密碼。沒輸入密碼的裝置只看得到排班表和請假'
+      : '⚠️ 目前沒設密碼，任何人打開網站都看得到全部功能';
+  }
   $('#cloudUrl').value = (CLOUD && CLOUD.url) || '';
   $('#cloudKey').value = (CLOUD && CLOUD.key) || '';
   $('#ghToken').value  = (CLOUD && CLOUD.token) || '';
@@ -1532,7 +1627,7 @@ $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='leave') renderLeave();
 });
 
-function renderAll(){ fillSelects(); renderWho(); renderPunch(); renderCal(); renderRecs(); renderStats(); renderBank(); renderLeave(); renderSetup(); }
+function renderAll(){ fillSelects(); renderWho(); renderPunch(); renderCal(); renderRecs(); renderStats(); renderBank(); renderLeave(); renderSetup(); applyRole(); }
 function fillSelects(){
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
   const bw = $('#bulkWho'), rw = $('#recWho'), kw = $('#bankWho'), lw = $('#lvWho');
@@ -1606,6 +1701,7 @@ async function applyCloudFromLink(){
   fillSelects(); renderAll(); tick(); setInterval(tick,1000);
   setInterval(()=>{ if($('#tab-punch').classList.contains('on')) renderPunch(); }, 60000);
   await applyCloudFromLink();
+  await refreshRole();
   paintSync();
   if(CLOUD){
     S0 = clone(core(S));
