@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-27T23:42:08+08:00",
+ "updatedAt": "2026-09-27T23:45:33+08:00",
  "employees": [
   {
    "id": "e1",
@@ -19,7 +19,8 @@
  ],
  "settings": {
   "base": 7,
-  "cut": 1
+  "cut": 1,
+  "adminHash": "be98bcd47e83efb5ff8453515cd22b56a423ce8a6eb8217c1b09bb19320bd55c"
  },
  "shifts": {},
  "records": {
