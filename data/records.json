@@ -1,11 +1,10 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T01:23:01+08:00",
+ "updatedAt": "2026-09-28T01:27:44+08:00",
  "employees": [
   {
    "id": "e1",
    "name": "Chloe",
-   "lineUserId": "U72dc110daa578a560acc24b392e46517",
    "role": "admin",
    "pinHash": "2c08f21e732c793ba66bc631de1461bfc8041a30b79e167f2e39b54065e42681"
   },
