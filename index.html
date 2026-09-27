@@ -208,14 +208,16 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
   <!-- ============ 登入 ============ -->
   <section id="tab-login">
     <div class="card" id="notLinkedCard" hidden>
-      <h2>⚠️ 這台裝置還沒連上系統</h2>
-      <div class="cloudbar bad">你現在看到的是一份空白的本機資料，不是大家共用的那一本。</div>
+      <h2 id="notLinkedTitle">第一次使用這台裝置</h2>
+      <div class="cloudbar" id="notLinkedWhy">輸入連線密語，這台就會接上大家共用的那本帳。只要做這一次。</div>
+      <div style="margin-top:10px"><div class="muted">連線密語</div>
+        <input type="password" id="linkKey" placeholder="跟 Chloe 要"></div>
+      <button class="btn" id="btnLink" style="margin-top:12px">連線</button>
       <div class="hint" style="margin-top:10px">
-        請用<b>管理員給你的連結</b>開啟這個網站（網址後面會有一長串 <code>#cloud=</code>），
-        點一下就會自動連上，然後才需要輸入你自己的密碼。<br><br>
-        建議用 <b>Safari 開啟並「加入主畫面」</b>，不要從 LINE 裡面點開——LINE 的內建瀏覽器每次可能都是新的空間，資料存不住。
+        建議用 <b>Safari 開啟並「加入主畫面」</b>，不要從 LINE 裡點開——LINE 的內建瀏覽器每次可能都是新的空間，連好了下次又要重來。<br>
+        連不上的話先檢查網路；這段期間打卡請改用 <b>LINE</b>，那條路不經過這個網頁。
       </div>
-      <button class="mini" id="btnStandalone" style="margin-top:12px">我知道，還是要單機使用</button>
+      <button class="mini" id="btnStandalone" style="margin-top:12px">不連線，只用這台（資料不會同步）</button>
     </div>
     <div class="card" id="loginCard">
       <h2>你是誰？</h2>
@@ -566,7 +568,7 @@ function save(){
   schedulePush();
 }
 async function load(){
-  CLOUD = (await idbGet('kv','cloud')) || null;
+  CLOUD = (await idbGet('kv','cloud')) || (BUILTIN_CLOUD.url ? clone(BUILTIN_CLOUD) : null);
   const s = await idbGet('kv','state');
   if(s){ S = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), s); S.settings = Object.assign({base:7,cut:1}, s.settings||{}); }
   if(!S.employees.length) S.employees = JSON.parse(JSON.stringify(DEFAULT.employees));
@@ -574,6 +576,13 @@ async function load(){
   curEmp = S.employees[0].id;
 }
 /* ---------------- 雲端同步（LINE 打卡共用同一本帳）---------------- */
+/* 內建的雲端連線設定：任何裝置打開網址就自動接上大家共用的那本帳。
+   真正的保護是「登入密碼」，不是靠藏這組設定。 */
+const BUILTIN_CLOUD = {
+  mode: 'gas',
+  url : 'https://script.google.com/macros/s/AKfycbxullRMAcdTZiI__Xzu-hupCyAZlHbMl1aVL2FojpvdzTp6LOZuoI7wjp3ngJG5AKO7sQ/exec',
+  key : ''          // 故意留空：寫入用的密語不放前端，見下方說明
+};
 let CLOUD = null;        // {url, key}
 let S0 = null;           // 上次跟雲端一致的快照
 let pushTimer = null, syncing = false, lastErr = '';
@@ -1336,13 +1345,13 @@ async function restoreLogin(){
     if(e && (!e.pinHash || e.pinHash === saved.pinHash)) ME = e;
   }
   // 尚未設定權限、而且已經連上系統 → 直接以第一個人使用（避免把自己鎖在外面）
-  if(!roleReady() && !ME && (CLOUD || standaloneOk)) ME = S.employees[0] || null;
+  if(!roleReady() && !ME && ((CLOUD && CLOUD.key && !lastErr) || standaloneOk)) ME = S.employees[0] || null;
   ADMIN = isAdmin(ME);
   if(ME) curEmp = ME.id;
   applyRole();
 }
 function applyRole(){
-  const linked = !!CLOUD || standaloneOk;
+  const linked = (!!CLOUD && CLOUD.key && !lastErr) || standaloneOk;
   const logged = !!ME && linked;          // 沒連上系統就什麼都不給用
   document.querySelectorAll('#tabs button').forEach(b=>{
     const t = b.dataset.tab;
@@ -1371,7 +1380,7 @@ $('#whoBtn').onclick = async ()=>{
 function renderLogin(){
   const box = $('#loginWho');
   if(!box) return;
-  const linked = !!CLOUD || standaloneOk;
+  const linked = (!!CLOUD && CLOUD.key && !lastErr) || standaloneOk;
   const nl = $('#notLinkedCard'), lc = $('#loginCard');
   if(nl && lc){ nl.hidden = linked; lc.hidden = !linked; }
   if(!linked) return;
@@ -1386,6 +1395,30 @@ function renderLogin(){
                      : `${e ? e.name : ''} 還沒設密碼，直接按登入就好（等管理員設定權限後就會要密碼）。`);
   });
 }
+$('#btnLink').onclick = async ()=>{
+  const k = $('#linkKey').value.trim();
+  if(!k){ toast('請輸入密語'); return; }
+  const prev = CLOUD;
+  CLOUD = Object.assign(clone(BUILTIN_CLOUD), {key: k});
+  try{
+    const data = await cloudCall({action:'state'});
+    const extra = localOnlyPatches(data.state);
+    if(extra.length && confirm(`這台有 ${extra.length} 筆雲端還沒有的紀錄，要一起上傳嗎？`)){
+      adoptRemote(mergeRemote(data.state)); S0 = clone(core(data.state));
+      await idbPut('kv','cloud', CLOUD); await cloudSync(false);
+    }else{
+      adoptRemote(data.state); await idbPut('kv','cloud', CLOUD);
+    }
+    markEverCloud(); lastErr=''; $('#linkKey').value='';
+    await restoreLogin(); renderAll(); paintSync();
+    toast('連上了 ☁️ 接下來輸入你自己的密碼');
+  }catch(err){
+    CLOUD = prev; lastErr = err.message;
+    $('#notLinkedWhy').className = 'cloudbar bad';
+    $('#notLinkedWhy').textContent = '連不上：' + err.message + '（密語打錯，或網路不通）';
+    renderLogin();
+  }
+};
 $('#btnStandalone').onclick = ()=>{
   if(!confirm('單機使用＝這台的紀錄只存在這台，不會跟 LINE 或其他人共用，也不會備份到雲端。\n（上次資料整批消失就是這個原因）\n\n確定要這樣用嗎？')) return;
   standaloneOk = true; renderLogin(); applyRole();
