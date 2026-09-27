@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:42:20+08:00",
+ "updatedAt": "2026-09-28T00:43:59+08:00",
  "employees": [
   {
    "id": "e1",
@@ -106,8 +106,10 @@
    "type": "補休",
    "half": false,
    "reason": "",
-   "status": "pending",
-   "createdAt": "2026-09-27T16:42:18.130Z"
+   "status": "rejected",
+   "createdAt": "2026-09-27T16:42:18.130Z",
+   "decidedAt": "2026-09-27T16:43:57.513Z",
+   "decidedBy": "e1"
   }
  }
 }
