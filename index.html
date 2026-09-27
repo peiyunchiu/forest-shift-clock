@@ -191,9 +191,10 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <h1>🌲 靜謐森林屋 · 排班打卡</h1>
       <span class="clock" id="liveClock">--:--</span>
       <button class="syncdot" id="syncDot" title="雲端同步狀態" hidden>☁️</button>
-      <button class="syncdot" id="lockBtn" title="管理模式">🔒</button>
+      <button class="syncdot" id="whoBtn" title="登出／換人" hidden>👤</button>
     </div>
     <nav class="tabs" id="tabs">
+      <button data-tab="login" hidden>登入</button>
       <button data-tab="punch" class="on">打卡</button>
       <button data-tab="sched">排班表</button>
       <button data-tab="recs">紀錄</button>
@@ -203,6 +204,20 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <button data-tab="setup">設定</button>
     </nav>
   </header>
+
+  <!-- ============ 登入 ============ -->
+  <section id="tab-login">
+    <div class="card">
+      <h2>你是誰？</h2>
+      <div class="who" id="loginWho"></div>
+      <div id="loginPinWrap" hidden style="margin-top:4px">
+        <div class="muted">密碼</div>
+        <input type="password" id="loginPin" placeholder="輸入你的密碼">
+      </div>
+      <button class="btn" id="btnLogin" style="margin-top:12px">登入</button>
+      <div class="hint" id="loginHint">登入後這台裝置就記住你了，打卡只會打你自己的。換人用要先登出。</div>
+    </div>
+  </section>
 
   <!-- ============ 打卡 ============ -->
   <section id="tab-punch" class="on">
@@ -369,18 +384,10 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       <button class="mini" id="btnAddEmp" style="margin-top:8px">＋ 新增員工</button>
     </div>
     <div class="card">
-      <h2>後台密碼</h2>
-      <div id="pinState" class="cloudbar">目前沒設密碼，任何人打開網站都看得到全部功能</div>
-      <div class="row" style="gap:8px;margin-top:10px">
-        <div style="flex:1"><div class="muted">新密碼</div><input type="password" id="pinNew" placeholder="自己想一組"></div>
-        <div style="flex:1"><div class="muted">再打一次</div><input type="password" id="pinNew2" placeholder="確認"></div>
-      </div>
-      <div class="grid2" style="margin-top:10px">
-        <button class="btn" id="btnPinSet">設定密碼</button>
-        <button class="btn ghost" id="btnPinClear">取消密碼</button>
-      </div>
-      <div class="hint">設了之後，沒輸入密碼的人只看得到<b>排班表</b>和<b>請假</b>，改不了設定、看不到統計。密碼用雜湊存，不會存明碼。<br>
-        ⚠️ 打卡資料放在公開的 GitHub repo，所以這個鎖是「防手滑」等級，擋不住刻意要查的人。</div>
+      <h2>身分與密碼</h2>
+      <div id="pinState" class="cloudbar"></div>
+      <div id="roleList" style="margin-top:10px"></div>
+      <div class="hint">⚠️ 打卡資料放在公開的 GitHub repo，密碼雖然是雜湊存的，但**別用生日或 1234**，至少 6 位、英數混合。這是「防手滑、防冒用」等級，不是銀行級保全。</div>
     </div>
     <div class="card">
       <h2>雲端同步 — 讓紀錄存進 GitHub</h2>
@@ -712,7 +719,7 @@ async function cloudSync(showToast){
     adoptRemote(data.state);
     lastErr = '';
     markEverCloud();
-    await refreshRole();
+    await restoreLogin();
     renderAll();
     if(showToast) toast(patches.length ? `已同步（送出 ${patches.length} 筆更新）` : '已是最新');
   }catch(err){
@@ -890,7 +897,8 @@ $('#btnAddPunch').onclick = ()=>pickDayToEdit();
 
 /** 補登：先選人跟日期，再開那天的打卡編輯 */
 function pickDayToEdit(){
-  const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  const pool = ADMIN ? S.employees : S.employees.filter(e=>ME && e.id===ME.id);
+  const opts = pool.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
   const d = new Date(); d.setDate(d.getDate()-1);
   openSheet(`<h3>補登打卡</h3>
     <div class="muted">誰的班</div><select id="pkWho">${opts}</select>
@@ -901,6 +909,7 @@ function pickDayToEdit(){
   $('#sheet').querySelector('[data-go]').onclick = ()=>{
     const emp = $('#pkWho').value, ds = $('#pkDate').value;
     if(!ds){ toast('請選日期'); return; }
+    if(!ADMIN && ME && emp !== ME.id){ toast('只能補自己的卡'); return; }
     closeSheet();
     setTimeout(()=>editRecord(ds, emp), 60);
   };
@@ -920,8 +929,11 @@ $('#foldChk').onchange = ()=>{
 
 /* ---------------- 畫面：打卡 ---------------- */
 function renderWho(){
-  $('#whoBar').innerHTML = S.employees.map(e=>
-    `<button data-e="${e.id}" class="${e.id===curEmp?'on':''}">${e.name}</button>`).join('');
+  const list = ADMIN ? S.employees : S.employees.filter(e=>ME && e.id===ME.id);
+  if(!ADMIN && ME) curEmp = ME.id;                       // 夥伴只能打自己的卡
+  $('#whoBar').innerHTML = list.map(e=>
+    `<button data-e="${e.id}" class="${e.id===curEmp?'on':''}">${e.name}</button>`).join('')
+    + (ADMIN ? '' : '<div class="hint" style="width:100%">你只能打自己的卡。要換人請點右上角 👤 登出。</div>');
   $('#whoBar').querySelectorAll('button').forEach(b=>b.onclick=()=>{ curEmp=b.dataset.e; renderWho(); renderPunch(); });
 }
 async function renderPunch(){
@@ -1066,6 +1078,7 @@ async function renderRecs(){
   const mo = $('#recMonth').value || monStr(new Date());
   const who = $('#recWho').value;
   const list = dayEntries()
+    .filter(r=>ADMIN || (ME && r.emp===ME.id))
     .filter(r=>r.date.startsWith(mo) && (who==='all' || r.emp===who))
     .sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
   if(!list.length){ $('#recList').innerHTML = `<div class="card"><div class="empty">這個月還沒有打卡紀錄。</div></div>`; return; }
@@ -1103,6 +1116,7 @@ $('#recMonth').onchange = renderRecs;
 $('#recWho').onchange = renderRecs;
 
 function editRecord(ds,emp){
+  if(!ADMIN && ME && emp !== ME.id){ toast('只能看／改自己的紀錄'); return; }
   const k = key(ds,emp), r = S.records[k] || {date:ds, emp, breakMin:0, fold:null, note:''};
   openSheet(`<h3>${labelDate(ds)} · ${empName(emp)}</h3>
     <div class="hint" style="margin-top:-8px;margin-bottom:10px">${ds === todayStr() ? '今天' : '補登 ' + ds.replace(/-/g,'/')}</div>
@@ -1231,7 +1245,8 @@ function renderBank(){
 $('#bankWho').onchange = renderBank;
 
 $('#btnAddFold').onclick = ()=>{
-  const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
+  const pool = ADMIN ? S.employees : S.employees.filter(e=>ME && e.id===ME.id);
+  const opts = pool.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
   openSheet(`<h3>補登折備品</h3>
     <div class="muted">誰折的</div><select id="fWho">${opts}</select>
     <div class="row" style="gap:8px;margin-top:10px">
@@ -1259,6 +1274,7 @@ $('#btnAddFold').onclick = ()=>{
 };
 
 $('#btnUse').onclick = ()=>{
+  if(!ADMIN){ toast('抵休要請管理員操作，你可以改用「請假 → 補休」'); return; }
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}（可抵 ${hrs(bank(e.id).left)} h）</option>`).join('');
   openSheet(`<h3>用折備品時數抵一天</h3>
     <div class="muted">誰要抵</div><select id="useWho">${opts}</select>
@@ -1287,67 +1303,133 @@ $('#btnUse').onclick = ()=>{
   };
 };
 
-/* ---------------- 管理模式（後台鎖）---------------- */
-let ADMIN = true;                       // 這台裝置有沒有解鎖後台
-const OPEN_TABS = ['sched','leave'];    // 沒解鎖時看得到的分頁
+/* ---------------- 登入與權限 ---------------- */
+let ME = null;                 // 這台裝置登入的人（employee 物件）
+let ADMIN = false;             // 是不是管理員
+let loginPick = null;          // 登入畫面上選到的人
 
 async function sha256(str){
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-async function refreshRole(){
-  const need = S.settings.adminHash;
-  if(!need){ ADMIN = true; }                       // 還沒設密碼 → 全開
-  else {
-    const saved = await idbGet('kv','adminOk');
-    ADMIN = saved === need;                        // 密碼改過的話，舊的解鎖就失效
+/** 還沒有人被設成管理員時，整個系統當作「尚未啟用權限」，全開（才不會把自己鎖在外面） */
+const roleReady = () => S.employees.some(e=>e.role === 'admin');
+const isAdmin = e => !roleReady() || (e && e.role === 'admin');
+
+async function restoreLogin(){
+  const saved = await idbGet('kv','me');
+  ME = null;
+  if(saved){
+    const e = S.employees.find(x=>x.id === saved.id);
+    // 密碼改過就要重新登入
+    if(e && (!e.pinHash || e.pinHash === saved.pinHash)) ME = e;
   }
+  if(!roleReady() && !ME) ME = S.employees[0] || null;   // 尚未設定權限 → 直接以第一個人使用
+  ADMIN = isAdmin(ME);
+  if(ME) curEmp = ME.id;
   applyRole();
 }
 function applyRole(){
+  const logged = !!ME;
   document.querySelectorAll('#tabs button').forEach(b=>{
-    b.hidden = !(ADMIN || OPEN_TABS.includes(b.dataset.tab));
+    const t = b.dataset.tab;
+    let show;
+    if(!logged) show = (t === 'login');
+    else if(ADMIN) show = (t !== 'login');
+    else show = ['punch','sched','recs','leave'].includes(t);   // 夥伴：打卡、看班表、自己的紀錄（補打卡用）、請假
+    b.hidden = !show;
   });
   const cur = document.querySelector('#tabs button.on');
-  if(cur && cur.hidden) document.querySelector('#tabs button:not([hidden])').click();
-  const lock = $('#lockBtn');
-  lock.textContent = ADMIN ? '🔓' : '🔒';
-  lock.title = ADMIN ? (S.settings.adminHash ? '管理模式（點一下鎖起來）' : '還沒設密碼，到設定可以設') : '點一下輸入密碼進管理模式';
-}
-$('#lockBtn').onclick = async ()=>{
-  if(!S.settings.adminHash){ toast('還沒設密碼，到「設定 → 後台密碼」設一組'); return; }
-  if(ADMIN){
-    await idbDel('kv','adminOk'); ADMIN = false; applyRole(); toast('已鎖起來，這台變成一般模式');
-    return;
+  if(!cur || cur.hidden){
+    const first = document.querySelector('#tabs button:not([hidden])');
+    if(first) first.click();
   }
-  const pin = prompt('輸入後台密碼：');
-  if(pin === null) return;
-  if(await sha256(pin) !== S.settings.adminHash){ alert('密碼不對'); return; }
-  await idbPut('kv','adminOk', S.settings.adminHash);
-  ADMIN = true; applyRole(); renderAll(); toast('已進入管理模式 🔓');
+  const wb = $('#whoBtn');
+  wb.hidden = !logged;
+  wb.textContent = ADMIN ? '👑' : '👤';
+  wb.title = logged ? `目前是 ${ME.name}${ADMIN ? '（管理員）' : ''}　點一下登出` : '';
+}
+$('#whoBtn').onclick = async ()=>{
+  if(!confirm(`目前登入：${ME ? ME.name : '—'}\n要登出換人嗎？`)) return;
+  await idbDel('kv','me'); ME = null; ADMIN = false;
+  applyRole(); renderAll(); toast('已登出');
 };
-$('#btnPinSet').onclick = async ()=>{
-  const a = $('#pinNew').value, b = $('#pinNew2').value;
-  if(!a){ toast('請輸入密碼'); return; }
-  if(a !== b){ toast('兩次輸入不一樣'); return; }
-  S.settings.adminHash = await sha256(a);
-  await idbPut('kv','adminOk', S.settings.adminHash);
-  save(); $('#pinNew').value=''; $('#pinNew2').value='';
-  ADMIN = true; applyRole(); renderSetup();
-  toast('密碼設好了。其他裝置要重新輸入才進得來');
+
+function renderLogin(){
+  const box = $('#loginWho');
+  if(!box) return;
+  box.innerHTML = S.employees.map(e=>
+    `<button data-l="${e.id}" class="${loginPick===e.id?'on':''}">${e.name}${e.role==='admin'?' 👑':''}</button>`).join('');
+  box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    loginPick = b.dataset.l; renderLogin();
+    const e = S.employees.find(x=>x.id===loginPick);
+    $('#loginPinWrap').hidden = !(e && e.pinHash);
+    $('#loginHint').textContent = (e && e.pinHash) ? '輸入你的密碼。忘記的話找 Chloe 重設。'
+      : `${e ? e.name : ''} 還沒設密碼，直接按登入就好。`;
+  });
+}
+$('#btnLogin').onclick = async ()=>{
+  const e = S.employees.find(x=>x.id===loginPick);
+  if(!e){ toast('先選你是誰'); return; }
+  if(e.pinHash){
+    const pin = $('#loginPin').value;
+    if(!pin){ toast('請輸入密碼'); return; }
+    if(await sha256(pin) !== e.pinHash){ alert('密碼不對'); return; }
+  }
+  await idbPut('kv','me', {id:e.id, pinHash:e.pinHash || ''});
+  $('#loginPin').value = '';
+  ME = e; ADMIN = isAdmin(e); curEmp = e.id;
+  applyRole(); renderAll();
+  toast(`${e.name} 登入了${ADMIN ? ' 👑' : ''}`);
 };
-$('#btnPinClear').onclick = async ()=>{
-  if(!S.settings.adminHash){ toast('本來就沒有密碼'); return; }
-  if(!confirm('取消密碼？之後任何人打開網站都看得到全部功能。')) return;
-  delete S.settings.adminHash;
-  await idbDel('kv','adminOk');
-  save(); ADMIN = true; applyRole(); renderSetup(); toast('已取消密碼');
-};
+
+/** 設定頁：每個人的角色與密碼 */
+function renderRoles(){
+  const box = $('#roleList'); if(!box) return;
+  const st = $('#pinState');
+  st.className = 'cloudbar' + (roleReady() ? '' : ' bad');
+  st.textContent = roleReady()
+    ? '✅ 已啟用身分登入，每個人只能打自己的卡'
+    : '⚠️ 還沒有人被設為管理員，目前任何人都能改任何東西。先把自己設成管理員。';
+  box.innerHTML = S.employees.map(e=>`
+    <div class="card" style="box-shadow:none;margin-bottom:10px">
+      <div class="row spread"><strong>${e.name}</strong>
+        <select data-role="${e.id}" style="width:auto">
+          <option value="staff" ${e.role!=='admin'?'selected':''}>夥伴</option>
+          <option value="admin" ${e.role==='admin'?'selected':''}>管理員 👑</option>
+        </select></div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <input type="password" data-pin="${e.id}" placeholder="${e.pinHash?'已設密碼，要改才填':'還沒設密碼'}">
+        <button class="mini" data-setpin="${e.id}">設定</button>
+        ${e.pinHash?`<button class="mini" data-clearpin="${e.id}">清除</button>`:''}
+      </div>
+    </div>`).join('');
+  box.querySelectorAll('[data-role]').forEach(sel=>sel.onchange=()=>{
+    const e = S.employees.find(x=>x.id===sel.dataset.role);
+    if(e.role === 'admin' && sel.value !== 'admin' && S.employees.filter(x=>x.role==='admin').length <= 1){
+      alert('至少要留一個管理員，不然沒人能改設定了。'); sel.value = 'admin'; return;
+    }
+    e.role = sel.value; save(); restoreLogin(); renderAll();
+    toast(`${e.name} → ${sel.value === 'admin' ? '管理員' : '夥伴'}`);
+  });
+  box.querySelectorAll('[data-setpin]').forEach(b=>b.onclick=async ()=>{
+    const id = b.dataset.setpin, inp = box.querySelector(`[data-pin="${id}"]`);
+    const v = inp.value.trim();
+    if(v.length < 4){ toast('密碼至少 4 個字'); return; }
+    const e = S.employees.find(x=>x.id===id);
+    e.pinHash = await sha256(v); inp.value = '';
+    if(ME && ME.id === id) await idbPut('kv','me', {id, pinHash:e.pinHash});
+    save(); renderRoles(); toast(`${e.name} 的密碼設好了`);
+  });
+  box.querySelectorAll('[data-clearpin]').forEach(b=>b.onclick=()=>{
+    const e = S.employees.find(x=>x.id===b.dataset.clearpin);
+    if(!confirm(`清除 ${e.name} 的密碼？之後他不用密碼就能登入。`)) return;
+    delete e.pinHash; save(); renderRoles(); toast('已清除');
+  });
+}
 
 /* ---------------- 請假 ---------------- */
 const LEAVE_HALF = 0.5;
-const isBoss = id => !!(S.employees.find(e=>e.id===id)||{}).boss;
-const anyBoss = () => S.employees.some(e=>e.boss);
 
 function daysBetween(from,to){
   const out = [], d = new Date(from+'T00:00:00'), end = new Date(to+'T00:00:00');
@@ -1391,8 +1473,8 @@ function renderLeaveForm(){
     const left = bank(emp).left;
     hint.innerHTML = `這張假單要用掉 <b>${hrs(need)}</b> 小時，${empName(emp)} 的帳戶目前有 <b>${hrs(left)}</b> 小時`
       + (need > left ? ' <span style="color:var(--danger)">（不夠，核准後帳戶會變負的）</span>' : ' ✅');
-  }else if(!anyBoss()){
-    hint.innerHTML = '⚠️ 還沒指定誰可以核准請假。到「設定 → 員工」把主管勾起來，不然假單會一直卡在待審核。';
+  }else if(!S.employees.some(e=>e.role==='admin')){
+    hint.innerHTML = '⚠️ 還沒指定管理員，假單會一直卡在待審核。到「設定 → 身分與密碼」設一個。';
   }else{
     hint.textContent = '送出後要等主管核准，核准了才會套到班表上。';
   }
@@ -1403,6 +1485,7 @@ function renderLeaveForm(){
 
 $('#btnLeaveSubmit').onclick = ()=>{
   const emp = $('#lvWho').value, from = $('#lvFrom').value, to = $('#lvTo').value;
+  if(!ADMIN && ME && emp !== ME.id){ toast('只能幫自己請假'); return; }
   if(!from || !to){ toast('請選日期'); return; }
   if(to < from){ toast('結束日不能比開始日早'); return; }
   const lv = {
@@ -1415,13 +1498,13 @@ $('#btnLeaveSubmit').onclick = ()=>{
   };
   S.leaves[lv.id] = lv; save(); $('#lvReason').value = '';
   renderAll();
-  toast(anyBoss() ? '假單送出了，等主管核准' : '假單送出了（還沒設定主管，記得去設定指定）');
+  toast(S.employees.some(e=>e.role==='admin') ? '假單送出了，等管理員核准' : '假單送出了（還沒設管理員，記得去設定）');
 };
 
 function decideLeave(id, ok){
   const lv = S.leaves[id]; if(!lv) return;
-  const me = curEmp;
-  if(!isBoss(me)){ toast('只有主管可以核准，先在「設定 → 員工」把自己勾成主管'); return; }
+  const me = ME ? ME.id : curEmp;
+  if(!ADMIN){ toast('只有管理員可以核准請假'); return; }
   if(lv.status === 'approved' && !ok) applyLeave(lv, false);      // 從核准改駁回 → 收回
   if(lv.status !== 'approved' && ok)  applyLeave(lv, true);
   lv.status = ok ? 'approved' : 'rejected';
@@ -1434,7 +1517,7 @@ function decideLeave(id, ok){
 function renderLeave(){
   const filter = $('#lvFilter').value;
   const list = Object.values(S.leaves).sort((a,b)=> a.createdAt < b.createdAt ? 1 : -1)
-    .filter(lv => ADMIN ? true : lv.emp === curEmp)          // 沒解鎖只看得到自己的假單
+    .filter(lv => ADMIN ? true : (ME && lv.emp === ME.id))   // 夥伴只看得到自己的假單
     .filter(lv => filter === 'all' ? true : filter === 'pending' ? lv.status === 'pending' : lv.emp === curEmp);
   const pending = Object.values(S.leaves).filter(lv=>lv.status === 'pending').length;
   const badge = $('#leaveBadge');
@@ -1455,10 +1538,10 @@ function renderLeave(){
       ${lv.reason ? `<div class="muted" style="margin-top:4px">📝 ${lv.reason}</div>` : ''}
       ${lv.status !== 'pending' ? `<div class="muted" style="margin-top:4px">${stTxt} by ${empName(lv.decidedBy)}</div>` : ''}
       <div class="row" style="gap:8px;margin-top:10px">
-        ${lv.status === 'pending' && isBoss(curEmp) ? `<button class="mini" data-ok="${lv.id}">✅ 同意</button><button class="mini" data-no="${lv.id}">✖️ 駁回</button>` : ''}
-        ${lv.status === 'approved' && isBoss(curEmp) ? `<button class="mini" data-no="${lv.id}">收回核准</button>` : ''}
-        ${lv.status === 'pending' && !isBoss(curEmp) ? '<span class="muted">等主管處理</span>' : ''}
-        <button class="mini" style="margin-left:auto" data-del="${lv.id}">刪除</button>
+        ${lv.status === 'pending' && ADMIN ? `<button class="mini" data-ok="${lv.id}">✅ 同意</button><button class="mini" data-no="${lv.id}">✖️ 駁回</button>` : ''}
+        ${lv.status === 'approved' && ADMIN ? `<button class="mini" data-no="${lv.id}">收回核准</button>` : ''}
+        ${lv.status === 'pending' && !ADMIN ? '<span class="muted">等管理員處理</span>' : ''}
+        ${(ADMIN || (ME && lv.emp===ME.id && lv.status==='pending')) ? `<button class="mini" style="margin-left:auto" data-del="${lv.id}">刪除</button>` : ''}
       </div></div>`;
   }).join('') : '<div class="empty">還沒有任何請假申請。</div>';
 
@@ -1476,13 +1559,7 @@ $('#lvFilter').onchange = renderLeave;
 
 /* ---------------- 設定 ---------------- */
 function renderSetup(){
-  const pinBox = $('#pinState');
-  if(pinBox){
-    pinBox.className = 'cloudbar' + (S.settings.adminHash ? '' : ' bad');
-    pinBox.textContent = S.settings.adminHash
-      ? '✅ 已設密碼。沒輸入密碼的裝置只看得到排班表和請假'
-      : '⚠️ 目前沒設密碼，任何人打開網站都看得到全部功能';
-  }
+  renderRoles();
   $('#cloudUrl').value = (CLOUD && CLOUD.url) || '';
   $('#cloudKey').value = (CLOUD && CLOUD.key) || '';
   $('#ghToken').value  = (CLOUD && CLOUD.token) || '';
@@ -1498,14 +1575,7 @@ function renderSetup(){
   $('#setCut').value = S.settings.cut;
   $('#empEdit').innerHTML = S.employees.map((e,i)=>`<div class="row" style="gap:8px;margin-bottom:8px">
     <input type="text" value="${e.name.replace(/"/g,'&quot;')}" data-name="${e.id}">
-    <label class="chk ${e.boss?'on':''}" style="padding:6px 10px;white-space:nowrap" title="可以核准請假">
-      <input type="checkbox" data-boss="${e.id}" ${e.boss?'checked':''}><span>主管</span></label>
     <button class="mini" data-rm="${e.id}" ${S.employees.length<=1?'disabled':''}>移除</button></div>`).join('');
-  $('#empEdit').querySelectorAll('[data-boss]').forEach(cb=>cb.onchange=()=>{
-    const e = S.employees.find(x=>x.id===cb.dataset.boss);
-    e.boss = cb.checked; save(); renderAll();
-    toast(cb.checked ? `${e.name} 可以核准請假了` : `${e.name} 不再是主管`);
-  });
   $('#empEdit').querySelectorAll('[data-name]').forEach(inp=>inp.onchange=()=>{
     const e = S.employees.find(x=>x.id===inp.dataset.name);
     e.name = inp.value.trim() || e.name; save(); renderAll();
@@ -1655,7 +1725,10 @@ $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='leave') renderLeave();
 });
 
-function renderAll(){ fillSelects(); renderWho(); renderPunch(); renderCal(); renderRecs(); renderStats(); renderBank(); renderLeave(); renderSetup(); applyRole(); }
+function renderAll(){
+  fillSelects(); renderLogin(); renderWho(); renderPunch(); renderCal();
+  renderRecs(); renderStats(); renderBank(); renderLeave(); renderSetup(); applyRole();
+}
 function fillSelects(){
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
   const bw = $('#bulkWho'), rw = $('#recWho'), kw = $('#bankWho'), lw = $('#lvWho');
@@ -1739,7 +1812,7 @@ async function applyCloudFromLink(){
   fillSelects(); renderAll(); tick(); setInterval(tick,1000);
   setInterval(()=>{ if($('#tab-punch').classList.contains('on')) renderPunch(); }, 60000);
   await applyCloudFromLink();
-  await refreshRole();
+  await restoreLogin();
   paintSync();
   if(CLOUD){
     S0 = clone(core(S));
