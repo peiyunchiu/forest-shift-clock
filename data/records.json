@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:02:04+08:00",
+ "updatedAt": "2026-09-28T00:02:15+08:00",
  "employees": [
   {
    "id": "e1",
@@ -13,7 +13,8 @@
    "id": "e2",
    "name": "Kobe",
    "boss": true,
-   "role": "admin"
+   "role": "admin",
+   "pinHash": "16a3e9e922b41fde13be3ae377b18e08d44fb136594e7f9819ff2ac75bab5516"
   },
   {
    "id": "e3",
