@@ -207,7 +207,17 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
 
   <!-- ============ 登入 ============ -->
   <section id="tab-login">
-    <div class="card">
+    <div class="card" id="notLinkedCard" hidden>
+      <h2>⚠️ 這台裝置還沒連上系統</h2>
+      <div class="cloudbar bad">你現在看到的是一份空白的本機資料，不是大家共用的那一本。</div>
+      <div class="hint" style="margin-top:10px">
+        請用<b>管理員給你的連結</b>開啟這個網站（網址後面會有一長串 <code>#cloud=</code>），
+        點一下就會自動連上，然後才需要輸入你自己的密碼。<br><br>
+        建議用 <b>Safari 開啟並「加入主畫面」</b>，不要從 LINE 裡面點開——LINE 的內建瀏覽器每次可能都是新的空間，資料存不住。
+      </div>
+      <button class="mini" id="btnStandalone" style="margin-top:12px">我知道，還是要單機使用</button>
+    </div>
+    <div class="card" id="loginCard">
       <h2>你是誰？</h2>
       <div class="who" id="loginWho"></div>
       <div id="loginPinWrap" hidden style="margin-top:4px">
@@ -1305,6 +1315,7 @@ $('#btnUse').onclick = ()=>{
 
 /* ---------------- 登入與權限 ---------------- */
 let ME = null;                 // 這台裝置登入的人（employee 物件）
+let standaloneOk = false;      // 使用者明確選擇「不連雲端、單機使用」
 let ADMIN = false;             // 是不是管理員
 let loginPick = null;          // 登入畫面上選到的人
 
@@ -1324,13 +1335,15 @@ async function restoreLogin(){
     // 密碼改過就要重新登入
     if(e && (!e.pinHash || e.pinHash === saved.pinHash)) ME = e;
   }
-  if(!roleReady() && !ME) ME = S.employees[0] || null;   // 尚未設定權限 → 直接以第一個人使用
+  // 尚未設定權限、而且已經連上系統 → 直接以第一個人使用（避免把自己鎖在外面）
+  if(!roleReady() && !ME && (CLOUD || standaloneOk)) ME = S.employees[0] || null;
   ADMIN = isAdmin(ME);
   if(ME) curEmp = ME.id;
   applyRole();
 }
 function applyRole(){
-  const logged = !!ME;
+  const linked = !!CLOUD || standaloneOk;
+  const logged = !!ME && linked;          // 沒連上系統就什麼都不給用
   document.querySelectorAll('#tabs button').forEach(b=>{
     const t = b.dataset.tab;
     let show;
@@ -1358,6 +1371,10 @@ $('#whoBtn').onclick = async ()=>{
 function renderLogin(){
   const box = $('#loginWho');
   if(!box) return;
+  const linked = !!CLOUD || standaloneOk;
+  const nl = $('#notLinkedCard'), lc = $('#loginCard');
+  if(nl && lc){ nl.hidden = linked; lc.hidden = !linked; }
+  if(!linked) return;
   box.innerHTML = S.employees.map(e=>
     `<button data-l="${e.id}" class="${loginPick===e.id?'on':''}">${e.name}${e.role==='admin'?' 👑':''}</button>`).join('');
   box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
@@ -1369,6 +1386,11 @@ function renderLogin(){
                      : `${e ? e.name : ''} 還沒設密碼，直接按登入就好（等管理員設定權限後就會要密碼）。`);
   });
 }
+$('#btnStandalone').onclick = ()=>{
+  if(!confirm('單機使用＝這台的紀錄只存在這台，不會跟 LINE 或其他人共用，也不會備份到雲端。\n（上次資料整批消失就是這個原因）\n\n確定要這樣用嗎？')) return;
+  standaloneOk = true; renderLogin(); applyRole();
+  toast('已切換成單機模式，資料不會同步');
+};
 $('#btnLogin').onclick = async ()=>{
   const e = S.employees.find(x=>x.id===loginPick);
   if(!e){ toast('先選你是誰'); return; }
