@@ -49,6 +49,10 @@ function doGet(e) {
       if (p.key !== P.getProperty('WEB_KEY')) return json({ ok: false, error: '通關密語不對' });
       return json({ ok: true, result: setupRichMenu() });
     }
+    if (p.action === 'migratepins') {
+      if (p.key !== P.getProperty('WEB_KEY')) return json({ ok: false, error: '通關密語不對' });
+      return json({ ok: true, result: migratePins() });
+    }
     return json({ ok: true, hint: '這是打卡機器人的後端，請從 LINE 或排班網站使用。' });
   } catch (err) {
     return json({ ok: false, error: String(err && err.message || err) });   // 出錯要講人話，不要回 HTML
@@ -58,6 +62,8 @@ function doGet(e) {
 /** 設定健檢：哪一項沒設好，一看就知道（不會洩漏鑰匙內容） */
 function diagnose() {
   var out = {};
+  var pins = loadPins();
+  out.密碼保管 = Object.keys(pins).length + ' 組存在私有設定（不在公開 repo）';
   ['LINE_TOKEN','GH_TOKEN','GH_REPO','GH_PATH','WEB_KEY','SITE_URL'].forEach(function (k) {
     var v = P.getProperty(k);
     out[k] = !v ? '❌ 沒設定'
@@ -83,16 +89,80 @@ function json(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+/* ============================ 密碼保管（存在這支程式的私有設定，不進公開 repo）============================ */
+
+function loadPins() {
+  try { return JSON.parse(P.getProperty('PINS') || '{}'); } catch (e) { return {}; }
+}
+function savePins(obj) { P.setProperty('PINS', JSON.stringify(obj)); }
+function getSalt() {
+  var s = P.getProperty('SALT');
+  if (!s) { s = Utilities.getUuid(); P.setProperty('SALT', s); }
+  return s;
+}
+/** 登入後發給那台裝置的憑證；密碼一改，舊 token 自動失效 */
+function makeToken(empId) {
+  var pins = loadPins();
+  return sha256hex(empId + '|' + (pins[empId] || '') + '|' + getSalt());
+}
+function whoIsToken(token) {
+  if (!token) return null;
+  var state = readState();
+  for (var i = 0; i < state.employees.length; i++) {
+    var e = state.employees[i];
+    if (makeToken(e.id) === token) return e;
+  }
+  return null;
+}
+
 /* ============================ 網站 API ============================ */
 
 function handleApi(body) {
-  if (body.key !== P.getProperty('WEB_KEY')) return { ok: false, error: '通關密語不對' };
+  // 1) 取得員工清單（公開，但只有名字和角色，沒有任何密碼資訊）
+  if (body.action === 'employees') {
+    var st = readState();
+    var pins = loadPins();
+    return { ok: true, employees: st.employees.map(function (e) {
+      return { id: e.id, name: e.name, role: e.role || 'staff', hasPin: !!pins[e.id] };
+    }) };
+  }
+
+  // 2) 登入：驗證密碼，換一張 token
+  if (body.action === 'login') {
+    var pins2 = loadPins();
+    var st2 = readState();
+    var target = st2.employees.filter(function (e) { return e.id === body.who; })[0];
+    if (!target) return { ok: false, error: '找不到這個人' };
+    if (!pins2[target.id]) return { ok: false, error: target.name + ' 還沒設密碼，請管理員先設定' };
+    if (sha256hex(String(body.pin || '')) !== pins2[target.id]) return { ok: false, error: '密碼不對' };
+    return { ok: true, token: makeToken(target.id), me: { id: target.id, name: target.name, role: target.role || 'staff' }, state: st2 };
+  }
+
+  // 3) 以下動作都要有效的 token（或舊的通關密語，給過渡期用）
+  var me = whoIsToken(body.token);
+  var keyOk = body.key && body.key === P.getProperty('WEB_KEY');
+  if (!me && !keyOk) return { ok: false, error: '請重新登入' };
+  var isAdmin = keyOk || (me && me.role === 'admin');
 
   if (body.action === 'state') return { ok: true, state: readState() };
 
+  if (body.action === 'setpin') {                    // 設定／清除密碼
+    if (!isAdmin && (!me || me.id !== body.who)) return { ok: false, error: '只能改自己的密碼' };
+    var pins3 = loadPins();
+    if (body.pin) {
+      if (String(body.pin).length < 6) return { ok: false, error: '密碼至少 6 個字' };
+      pins3[body.who] = sha256hex(String(body.pin));
+    } else {
+      if (!isAdmin) return { ok: false, error: '只有管理員能清除密碼' };
+      delete pins3[body.who];
+    }
+    savePins(pins3);
+    return { ok: true, token: (me && me.id === body.who) ? makeToken(body.who) : null };
+  }
+
   if (body.action === 'patch') {
     var state = mutate(function (s) {
-      (body.patches || []).forEach(function (p) { applyPatch(s, p); });
+      (body.patches || []).forEach(function (p) { applyPatch(s, p, isAdmin, me); });
     }, '網站更新 ' + nowStamp());
     return { ok: true, state: state };
   }
@@ -100,7 +170,29 @@ function handleApi(body) {
   return { ok: false, error: '不認得的動作：' + body.action };
 }
 
-function applyPatch(s, p) {
+/** 一次性搬家：把公開資料裡的 pinHash 搬進私有設定，並從 records.json 移除 */
+function migratePins() {
+  var pins = loadPins(), moved = [];
+  mutate(function (s) {
+    s.employees.forEach(function (e) {
+      if (e.pinHash) { pins[e.id] = e.pinHash; moved.push(e.name); delete e.pinHash; }
+    });
+  }, '把密碼從公開資料移到私有設定');
+  savePins(pins);
+  console.log(moved.length ? ('已搬移：' + moved.join('、')) : '沒有要搬的密碼');
+  return moved.length ? ('已搬移 ' + moved.length + ' 組密碼：' + moved.join('、')) : '沒有要搬的密碼';
+}
+
+function applyPatch(s, p, isAdmin, me) {
+  // 密碼一律不接受從前端寫入公開資料
+  if (p.type === 'employees' && p.value) {
+    p.value.forEach(function (e) { delete e.pinHash; });
+  }
+  if (isAdmin === false && me) {                       // 夥伴只能動自己的資料
+    var owner = (p.key || '').split('|')[1];
+    if ((p.type === 'record' || p.type === 'shift') && owner && owner !== me.id) return;
+    if (p.type === 'settings' || p.type === 'employees') return;
+  }
   if (p.type === 'record') {
     if (p.value === null) delete s.records[p.key]; else s.records[p.key] = p.value;
   } else if (p.type === 'shift') {
@@ -181,7 +273,7 @@ function handleBinding(ev, uid, text, state) {
       cache.remove('bind_' + uid);
       return replyWhoAreYou(ev.replyToken, '好，重新選：');
     }
-    if (sha256hex(text) !== target.pinHash) {
+    if (sha256hex(text) !== loadPins()[target.id]) {
       return reply(ev.replyToken, '密碼不對 ❌\n再輸入一次，或打「取消」重選。');
     }
     mutate(function (s) {
@@ -196,7 +288,7 @@ function handleBinding(ev, uid, text, state) {
   // 第一步：選人
   var picked = matchEmployeeByName(state, text.replace(/^我是\s*/, ''));
   if (!picked) return replyWhoAreYou(ev.replyToken, '還不知道你是誰，選一個：');
-  if (!picked.pinHash) {
+  if (!loadPins()[picked.id]) {
     return reply(ev.replyToken,
       picked.name + ' 還沒設密碼，不能綁定。\n請管理員到網站「設定 → 身分與密碼」幫他設一組，再回來綁。',
       { items: [] });

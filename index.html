@@ -208,16 +208,14 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
   <!-- ============ 登入 ============ -->
   <section id="tab-login">
     <div class="card" id="notLinkedCard" hidden>
-      <h2 id="notLinkedTitle">第一次使用這台裝置</h2>
-      <div class="cloudbar" id="notLinkedWhy">輸入連線密語，這台就會接上大家共用的那本帳。只要做這一次。</div>
-      <div style="margin-top:10px"><div class="muted">連線密語</div>
-        <input type="password" id="linkKey" placeholder="跟 Chloe 要"></div>
-      <button class="btn" id="btnLink" style="margin-top:12px">連線</button>
+      <h2>⚠️ 連不上系統</h2>
+      <div class="cloudbar bad" id="notLinkedWhy">正在連線…</div>
       <div class="hint" style="margin-top:10px">
-        建議用 <b>Safari 開啟並「加入主畫面」</b>，不要從 LINE 裡點開——LINE 的內建瀏覽器每次可能都是新的空間，連好了下次又要重來。<br>
-        連不上的話先檢查網路；這段期間打卡請改用 <b>LINE</b>，那條路不經過這個網頁。
+        網路不通、或後端暫時掛掉時會看到這個。先檢查網路再重新整理。<br>
+        這段期間打卡請改用 <b>LINE</b>，那條路不經過這個網頁。<br><br>
+        建議用 <b>Safari 開啟並「加入主畫面」</b>，不要從 LINE 裡點開。
       </div>
-      <button class="mini" id="btnStandalone" style="margin-top:12px">不連線，只用這台（資料不會同步）</button>
+      <button class="btn ghost" id="btnRetryLink" style="margin-top:12px">重新連線</button>
     </div>
     <div class="card" id="loginCard">
       <h2>你是誰？</h2>
@@ -472,6 +470,15 @@ const dStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}
 const todayStr = () => dStr(new Date());
 const monStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
 const hm = iso => { const d=new Date(iso); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+/** 存時間一律用「當地時間＋時區」，跟 LINE 機器人同一種格式，外部程式才讀得懂 */
+function isoLocal(d){
+  d = d || new Date();
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? '+' : '-';
+  const oh = pad(Math.floor(Math.abs(off)/60)), om = pad(Math.abs(off)%60);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`
+       + `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${oh}:${om}`;
+}
 const hrs = min => (min/60).toFixed(1);
 const WD = ['日','一','二','三','四','五','六'];
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('on'),2200); }
@@ -598,8 +605,9 @@ async function load(){
 const BUILTIN_CLOUD = {
   mode: 'gas',
   url : 'https://script.google.com/macros/s/AKfycbxullRMAcdTZiI__Xzu-hupCyAZlHbMl1aVL2FojpvdzTp6LOZuoI7wjp3ngJG5AKO7sQ/exec',
-  key : ''          // 故意留空：寫入用的密語不放前端，見下方說明
+  key : ''          // 不放共用密語：改用每個人登入後拿到的 token
 };
+let TOKEN = null;   // 登入憑證（存在這台裝置，密碼一改就失效）
 let CLOUD = null;        // {url, key}
 let S0 = null;           // 上次跟雲端一致的快照
 let pushTimer = null, syncing = false, lastErr = '';
@@ -695,7 +703,7 @@ async function cloudCall(payload){
   const res = await fetch(CLOUD.url, {
     method:'POST', redirect:'follow',
     headers:{'Content-Type':'text/plain;charset=utf-8'},   // 用 text/plain 避開瀏覽器的預檢
-    body: JSON.stringify(Object.assign({key:CLOUD.key}, payload))
+    body: JSON.stringify(Object.assign({key:CLOUD.key, token:TOKEN}, payload))
   });
   if(!res.ok) throw new Error('連線失敗 '+res.status);
   const data = await res.json();
@@ -908,7 +916,7 @@ async function doPunch(kind, withPhoto){
     photoId = uid();
     await idbPut('photos', photoId, blob);
   }
-  const now = new Date().toISOString();
+  const now = isoLocal();
   const r = S.records[k] || { date:ds, emp:curEmp, breakMin:0, fold:null, note:'' };
   if(kind === 'in'){
     if(r.in && !confirm('今天已經有上班打卡紀錄（'+hm(r.in)+'），要覆蓋嗎？')) return;
@@ -1171,7 +1179,7 @@ function editRecord(ds,emp){
     <div style="margin-top:10px"><div class="muted">備註</div><input type="text" id="edNote" value="${(r.note||'').replace(/"/g,'&quot;')}" placeholder="例如：客人晚退房、臨時加班"></div>
     <div class="grid2" style="margin-top:12px"><button class="btn" data-save>儲存</button><button class="btn ghost" data-close>取消</button></div>
     <button class="btn danger" style="margin-top:8px" data-del>刪除這筆紀錄</button>`);
-  const mk = t => t ? new Date(`${ds}T${t}:00`).toISOString() : null;
+  const mk = t => t ? isoLocal(new Date(`${ds}T${t}:00`)) : null;
   const before = S.records[k] ? clone(S.records[k]) : null;
   $('#sheet').querySelector('[data-save]').onclick = ()=>{
     const i=$('#edIn').value, o=$('#edOut').value;
@@ -1395,16 +1403,23 @@ const roleReady = () => S.employees.some(e=>e.role === 'admin');
 const isAdmin = e => !roleReady() || (e && e.role === 'admin');
 
 async function restoreLogin(){
-  const saved = await idbGet('kv','me');
-  ME = null;
-  if(saved){
-    const e = S.employees.find(x=>x.id === saved.id);
-    // 密碼改過就要重新登入
-    if(e && (!e.pinHash || e.pinHash === saved.pinHash)) ME = e;
+  const saved = await idbGet('kv','token');
+  ME = null; TOKEN = null;
+  if(saved && saved.token){
+    TOKEN = saved.token;
+    try{
+      const data = await cloudCall({action:'state'});     // token 無效會直接被打回
+      adoptRemote(data.state);
+      ME = S.employees.find(x=>x.id === saved.id) || null;
+      lastErr = '';
+    }catch(err){
+      TOKEN = null; ME = null;
+      await idbDel('kv','token');
+      if(!/重新登入|密碼/.test(err.message)) lastErr = err.message;   // 網路問題才算連線失敗
+    }
   }
-  // 尚未設定權限、而且已經連上系統 → 直接以第一個人使用（避免把自己鎖在外面）
-  if(!roleReady() && !ME && ((CLOUD && CLOUD.key && !lastErr) || standaloneOk)) ME = S.employees[0] || null;
-  ADMIN = isAdmin(ME);
+  ADMIN = !!(ME && ME.role === 'admin');
+  if(ME) ME.hasPin = true;
   if(ME) curEmp = ME.id;
   applyRole();
 }
@@ -1431,29 +1446,41 @@ function applyRole(){
 }
 $('#whoBtn').onclick = async ()=>{
   if(!confirm(`目前登入：${ME ? ME.name : '—'}\n要登出換人嗎？`)) return;
-  await idbDel('kv','me'); ME = null; ADMIN = false;
+  await idbDel('kv','token'); await idbDel('kv','me');
+  ME = null; ADMIN = false; TOKEN = null;
   applyRole(); renderAll(); toast('已登出');
 };
 
 function renderLogin(){
   const box = $('#loginWho');
   if(!box) return;
-  const linked = (!!CLOUD && CLOUD.key && !lastErr) || standaloneOk;
+  const linked = (!!CLOUD && !lastErr) || standaloneOk;
   const nl = $('#notLinkedCard'), lc = $('#loginCard');
-  if(nl && lc){ nl.hidden = linked; lc.hidden = !linked; }
+  if(nl && lc){
+    nl.hidden = linked; lc.hidden = !linked;
+    const why = $('#notLinkedWhy');
+    if(why && !linked) why.textContent = lastErr ? ('連不上：' + lastErr) : '正在連線…';
+  }
   if(!linked) return;
   box.innerHTML = S.employees.map(e=>
     `<button data-l="${e.id}" class="${loginPick===e.id?'on':''}">${e.name}${e.role==='admin'?' 👑':''}</button>`).join('');
   box.querySelectorAll('button').forEach(b=>b.onclick=()=>{
     loginPick = b.dataset.l; renderLogin();
     const e = S.employees.find(x=>x.id===loginPick);
-    $('#loginPinWrap').hidden = !(e && e.pinHash);
-    $('#loginHint').textContent = (e && e.pinHash) ? '輸入你的密碼。忘記的話找管理員重設。'
-      : (roleReady() ? `⚠️ ${e ? e.name : ''} 還沒設密碼，不能登入。請管理員先幫他設一組。`
-                     : `${e ? e.name : ''} 還沒設密碼，直接按登入就好（等管理員設定權限後就會要密碼）。`);
+    const noPin = e && e.hasPin === false;
+    $('#loginPinWrap').hidden = false;
+    $('#loginHint').textContent = noPin
+      ? `⚠️ ${e.name} 還沒設密碼，請管理員到「設定 → 身分與密碼」先設一組。`
+      : '輸入你的密碼。忘記的話找管理員重設。';
   });
 }
-$('#btnLink').onclick = async ()=>{
+$('#btnRetryLink').onclick = async ()=>{
+  if(!CLOUD) CLOUD = clone(BUILTIN_CLOUD);
+  lastErr = '';
+  await fetchEmployeeList();
+  renderLogin(); applyRole(); paintSync();
+};
+const _unusedLink = async ()=>{
   const k = $('#linkKey').value.trim();
   if(!k){ toast('請輸入密語'); return; }
   const prev = CLOUD;
@@ -1485,21 +1512,24 @@ $('#btnStandalone').onclick = ()=>{
 $('#btnLogin').onclick = async ()=>{
   const e = S.employees.find(x=>x.id===loginPick);
   if(!e){ toast('先選你是誰'); return; }
-  if(!e.pinHash){
-    if(roleReady()){       // 已經啟用權限了，就不准沒密碼的人進來
-      alert(`${e.name} 還沒設密碼，不能登入。\n請管理員到「設定 → 身分與密碼」幫他設一組。`);
-      return;
-    }
-  }else{
-    const pin = $('#loginPin').value;
-    if(!pin){ toast('請輸入密碼'); return; }
-    if(await sha256(pin) !== e.pinHash){ alert('密碼不對'); return; }
-  }
-  await idbPut('kv','me', {id:e.id, pinHash:e.pinHash || ''});
-  $('#loginPin').value = '';
-  ME = e; ADMIN = isAdmin(e); curEmp = e.id;
-  applyRole(); renderAll();
-  toast(`${e.name} 登入了${ADMIN ? ' 👑' : ''}`);
+  const pin = $('#loginPin').value;
+  if(!pin){ toast('請輸入密碼'); return; }
+  const btn = $('#btnLogin'); btn.disabled = true; btn.textContent = '登入中…';
+  try{
+    const data = await cloudCall({action:'login', who:e.id, pin});
+    TOKEN = data.token;
+    await idbPut('kv','token', {id:e.id, token:TOKEN});
+    adoptRemote(data.state);
+    ME = S.employees.find(x=>x.id===e.id) || e;
+    ADMIN = (data.me && data.me.role === 'admin');
+    curEmp = ME.id;
+    $('#loginPin').value = '';
+    markEverCloud(); lastErr='';
+    applyRole(); renderAll(); paintSync();
+    toast(`${ME.name} 登入了${ADMIN ? ' 👑' : ''}`);
+  }catch(err){
+    alert('登入失敗：' + err.message);
+  }finally{ btn.disabled = false; btn.textContent = '登入'; }
 };
 
 /** 設定頁：每個人的角色與密碼 */
@@ -1507,11 +1537,11 @@ function renderRoles(){
   const box = $('#roleList'); if(!box) return;
   const st = $('#pinState');
   st.className = 'cloudbar' + (roleReady() ? '' : ' bad');
-  const noPin = S.employees.filter(e=>!e.pinHash).map(e=>e.name);
+  const noPin = S.employees.filter(e=>!(e.hasPin || e.pinHash)).map(e=>e.name);
   st.textContent = !roleReady()
     ? '⚠️ 還沒有人被設為管理員，目前任何人都能改任何東西。先把自己設成管理員。'
     : (noPin.length ? `⚠️ 這些人還沒設密碼，登不進來也綁不了 LINE：${noPin.join('、')}`
-                    : '✅ 每個人都有密碼了，網站和 LINE 都要驗證身分');
+                    : '✅ 密碼存在後端的私有設定，不會出現在公開的 GitHub 資料裡');
   box.innerHTML = S.employees.map(e=>`
     <div class="card" style="box-shadow:none;margin-bottom:10px">
       <div class="row spread"><strong>${e.name}</strong>
@@ -1520,9 +1550,9 @@ function renderRoles(){
           <option value="admin" ${e.role==='admin'?'selected':''}>管理員 👑</option>
         </select></div>
       <div class="row" style="gap:8px;margin-top:8px">
-        <input type="password" data-pin="${e.id}" placeholder="${e.pinHash?'已設密碼，要改才填':'還沒設密碼'}">
+        <input type="password" data-pin="${e.id}" placeholder="${(e.hasPin||e.pinHash)?'已設密碼，要改才填':'⚠️ 還沒設密碼'}">
         <button class="mini" data-setpin="${e.id}">設定</button>
-        ${e.pinHash?`<button class="mini" data-clearpin="${e.id}">清除</button>`:''}
+        ${(e.hasPin||e.pinHash)?`<button class="mini" data-clearpin="${e.id}">清除</button>`:''}
       </div>
     </div>`).join('');
   box.querySelectorAll('[data-role]').forEach(sel=>sel.onchange=()=>{
@@ -1536,16 +1566,22 @@ function renderRoles(){
   box.querySelectorAll('[data-setpin]').forEach(b=>b.onclick=async ()=>{
     const id = b.dataset.setpin, inp = box.querySelector(`[data-pin="${id}"]`);
     const v = inp.value.trim();
-    if(v.length < 4){ toast('密碼至少 4 個字'); return; }
+    if(v.length < 6){ toast('密碼至少 6 個字（太短的會被猜出來）'); return; }
     const e = S.employees.find(x=>x.id===id);
-    e.pinHash = await sha256(v); inp.value = '';
-    if(ME && ME.id === id) await idbPut('kv','me', {id, pinHash:e.pinHash});
-    save(); renderRoles(); toast(`${e.name} 的密碼設好了`);
+    try{
+      const r = await cloudCall({action:'setpin', who:id, pin:v});
+      if(r.token){ TOKEN = r.token; await idbPut('kv','token', {id, token:TOKEN}); }
+      e.hasPin = true; inp.value = '';
+      renderRoles(); toast(`${e.name} 的密碼設好了（存在後端，不會進公開資料）`);
+    }catch(err){ alert('設定失敗：'+err.message); }
   });
-  box.querySelectorAll('[data-clearpin]').forEach(b=>b.onclick=()=>{
+  box.querySelectorAll('[data-clearpin]').forEach(b=>b.onclick=async ()=>{
     const e = S.employees.find(x=>x.id===b.dataset.clearpin);
-    if(!confirm(`清除 ${e.name} 的密碼？之後他不用密碼就能登入。`)) return;
-    delete e.pinHash; save(); renderRoles(); toast('已清除');
+    if(!confirm(`清除 ${e.name} 的密碼？清除後他登不進來，要等你重設。`)) return;
+    try{
+      await cloudCall({action:'setpin', who:e.id, pin:''});
+      e.hasPin = false; renderRoles(); toast('已清除');
+    }catch(err){ alert('清除失敗：'+err.message); }
   });
 }
 
@@ -2018,6 +2054,20 @@ async function applyCloudFromLink(){
   }
 }
 
+/** 還沒登入時，先跟後端要「只有名字和角色」的員工清單 */
+async function fetchEmployeeList(){
+  if(!CLOUD) return false;
+  try{
+    const data = await cloudCall({action:'employees'});
+    if(data.employees && data.employees.length){
+      S.employees = data.employees.map(e=>({id:e.id, name:e.name, role:e.role, hasPin:e.hasPin}));
+      lastErr = '';
+      return true;
+    }
+  }catch(err){ lastErr = err.message; }
+  return false;
+}
+
 (async function init(){
   await storageProbe();
   setTimeout(guardCloud, 1500);
@@ -2030,6 +2080,8 @@ async function applyCloudFromLink(){
   setInterval(()=>{ if($('#tab-punch').classList.contains('on')) renderPunch(); }, 60000);
   await applyCloudFromLink();
   await restoreLogin();
+  if(!ME) await fetchEmployeeList();      // 沒登入就先把名單抓回來
+  renderLogin(); applyRole();
   paintSync();
   if(CLOUD){
     S0 = clone(core(S));
