@@ -792,7 +792,8 @@ function bank(emp, mo){                       // mo 有給就只算那個月，�
 function workedMin(r){
   if(!r || !r.in || !r.out) return 0;
   let m = (new Date(r.out) - new Date(r.in)) / 60000;
-  if(m < 0) m += 24*60;                       // 跨夜
+  if(m <= -60) m += 24*60;                    // 真的跨夜（例如 20:00 上班、03:00 下班）
+  else if(m < 0) m = 0;                       // 下班時間比上班早一點點＝按錯，算 0 不是 24 小時
   return Math.max(0, Math.round(m - (r.breakMin||0)));
 }
 function dayCalc(ds,emp){

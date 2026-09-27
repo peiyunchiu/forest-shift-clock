@@ -381,7 +381,8 @@ function matchEmployeeByName(s, name) {
 function workedMin(r) {
   if (!r || !r.in || !r.out) return 0;
   var m = (new Date(r.out) - new Date(r.in)) / 60000;
-  if (m < 0) m += 24 * 60;                      // 跨夜
+  if (m <= -60) m += 24 * 60;                   // 真的跨夜（例如 20:00 上班、03:00 下班）
+  else if (m < 0) m = 0;                        // 下班比上班早一點點＝按錯，算 0
   return Math.max(0, Math.round(m - (r.breakMin || 0)));
 }
 function targetMin(r, sh, settings) {
