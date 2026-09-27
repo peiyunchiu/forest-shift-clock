@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:43:59+08:00",
+ "updatedAt": "2026-09-28T00:44:19+08:00",
  "employees": [
   {
    "id": "e1",
@@ -110,6 +110,17 @@
    "createdAt": "2026-09-27T16:42:18.130Z",
    "decidedAt": "2026-09-27T16:43:57.513Z",
    "decidedBy": "e1"
+  },
+  "muk1tgecchlvdr": {
+   "id": "muk1tgecchlvdr",
+   "emp": "e3",
+   "from": "2026-09-28",
+   "to": "2026-09-28",
+   "type": "補休",
+   "half": false,
+   "reason": "",
+   "status": "pending",
+   "createdAt": "2026-09-27T16:44:17.605Z"
   }
  }
 }
