@@ -651,6 +651,24 @@ async function cloudCall(payload){
   if(!data.ok) throw new Error(data.error || '後端拒絕了');
   return data;
 }
+/** 第一次連線：把「這台有、雲端沒有」的紀錄找出來，才不會被雲端蓋掉 */
+function localOnlyPatches(remote){
+  const out = [];
+  [['records','record'],['shifts','shift'],['leaves','leave']].forEach(([field,type])=>{
+    const R = (remote && remote[field]) || {}, L = S[field] || {};
+    Object.keys(L).forEach(k=>{ if(!(k in R)) out.push({type, key:k, value:L[k]}); });
+  });
+  return out;
+}
+/** 合併：雲端為主，補上這台獨有的（不覆蓋雲端已有的） */
+function mergeRemote(remote){
+  const merged = clone(remote);
+  [['records'],['shifts'],['leaves']].forEach(([field])=>{
+    merged[field] = merged[field] || {};
+    Object.keys(S[field] || {}).forEach(k=>{ if(!(k in merged[field])) merged[field][k] = S[field][k]; });
+  });
+  return merged;
+}
 function adoptRemote(state){
   if(!state) return;
   S.employees = state.employees; S.settings = state.settings;
@@ -1521,11 +1539,16 @@ $('#btnCloudOn').onclick = async ()=>{
   }
   try{
     const data = await cloudCall({action:'state'});
-    const localCount = Object.keys(S.records).length;
-    const remoteCount = Object.keys((data.state&&data.state.records)||{}).length;
-    if(localCount && !remoteCount && confirm(`雲端目前是空的，要把這台裝置的 ${localCount} 筆紀錄推上去嗎？\n（選取消就改成用雲端的資料覆蓋這台）`)){
-      S0 = clone(core(data.state));
-      await cloudSync(false);
+    const extra = localOnlyPatches(data.state);
+    if(extra.length){
+      const ok = confirm(`這台裝置有 ${extra.length} 筆雲端還沒有的紀錄。\n\n按「確定」＝一起上傳，兩邊合併（建議）\n按「取消」＝放棄這台的紀錄，只用雲端的`);
+      if(ok){
+        adoptRemote(mergeRemote(data.state));          // 先合併到本機
+        S0 = clone(core(data.state));                  // 基準設成雲端，差異就是那幾筆
+        await cloudSync(false);                        // 推上去
+      }else{
+        adoptRemote(data.state);
+      }
     }else{
       adoptRemote(data.state);
     }
@@ -1677,6 +1700,16 @@ async function applyCloudFromLink(){
   CLOUD = cfg;
   try{
     const data = await cloudCall({action:'state'});
+    const extra = localOnlyPatches(data.state);
+    if(extra.length && confirm(`這台裝置有 ${extra.length} 筆雲端還沒有的紀錄，要一起上傳嗎？\n（按取消就只用雲端的資料）`)){
+      adoptRemote(mergeRemote(data.state));
+      S0 = clone(core(data.state));
+      await idbPut('kv','cloud', CLOUD);
+      await cloudSync(false);
+      markEverCloud(); renderAll(); paintSync();
+      toast('已合併並連上雲端 ☁️');
+      return true;
+    }
     adoptRemote(data.state);
     await idbPut('kv','cloud', CLOUD);
     markEverCloud();
