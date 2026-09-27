@@ -378,6 +378,14 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
       </div>
       <div id="leaveList"></div>
     </div>
+
+    <div class="card">
+      <div class="row spread" style="margin-bottom:10px">
+        <h2 style="margin:0">補登申請</h2>
+        <span class="muted">改過去的打卡要管理員核准</span>
+      </div>
+      <div id="editList"></div>
+    </div>
   </section>
 
   <!-- ============ 設定 ============ -->
@@ -430,6 +438,11 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <button class="btn ghost" id="btnCloudOff">改回只存這台</button>
       </div>
       <div class="hint">連上之後每打一次卡就即時寫進 GitHub，瀏覽器被清掉也不怕，換裝置重新連就全部回來。照片不會上傳，只留在拍照那台。</div>
+    </div>
+    <div class="card">
+      <h2>操作紀錄</h2>
+      <div class="hint" style="margin-top:0">誰刪了什麼、改了什麼，都留在這裡，也會一起存進雲端。</div>
+      <div id="auditList" style="margin-top:10px"></div>
     </div>
     <div class="card">
       <h2>備份與還原</h2>
@@ -556,6 +569,8 @@ const DEFAULT = {
   settings:{base:7, cut:1},   // cut = 折備品每次入帳幾小時
   shifts:{},   // "YYYY-MM-DD|empId" -> {start, fold, off}
   leaves:{},   // id -> {id, emp, from, to, type, half, reason, status, createdAt, decidedAt, decidedBy}
+  edits:{},    // id -> 補登申請 {id, emp, date, before, after, by, status, createdAt, decidedAt, decidedBy, reason}
+  audit:[],    // 稽核：誰在什麼時候刪了／改了什麼
   records:{}   // "YYYY-MM-DD|empId" -> {date, emp, in, out, breakMin, fold, useMin, inPhoto, outPhoto, note}
 };
 let S = JSON.parse(JSON.stringify(DEFAULT));
@@ -573,6 +588,8 @@ async function load(){
   if(s){ S = Object.assign(JSON.parse(JSON.stringify(DEFAULT)), s); S.settings = Object.assign({base:7,cut:1}, s.settings||{}); }
   if(!S.employees.length) S.employees = JSON.parse(JSON.stringify(DEFAULT.employees));
   if(!S.leaves) S.leaves = {};
+  if(!S.edits) S.edits = {};
+  if(!Array.isArray(S.audit)) S.audit = [];
   curEmp = S.employees[0].id;
 }
 /* ---------------- 雲端同步（LINE 打卡共用同一本帳）---------------- */
@@ -588,11 +605,13 @@ let S0 = null;           // 上次跟雲端一致的快照
 let pushTimer = null, syncing = false, lastErr = '';
 
 const clone = o => JSON.parse(JSON.stringify(o));
-const core  = s => ({employees:s.employees, settings:s.settings, shifts:s.shifts, records:s.records, leaves:s.leaves||{}});
+const core  = s => ({employees:s.employees, settings:s.settings, shifts:s.shifts, records:s.records,
+                     leaves:s.leaves||{}, edits:s.edits||{}, audit:s.audit||[]});
 
 function diffPatches(a,b){
   const out = [];
-  [['records','record'],['shifts','shift'],['leaves','leave']].forEach(([field,type])=>{
+  if(JSON.stringify(a.audit||[]) !== JSON.stringify(b.audit||[])) out.push({type:'audit', value:b.audit||[]});
+  [['records','record'],['shifts','shift'],['leaves','leave'],['edits','edit']].forEach(([field,type])=>{
     const A = a[field]||{}, B = b[field]||{};
     Object.keys(B).forEach(k=>{ if(JSON.stringify(A[k]) !== JSON.stringify(B[k])) out.push({type, key:k, value:B[k]}); });
     Object.keys(A).forEach(k=>{ if(!(k in B)) out.push({type, key:k, value:null}); });
@@ -618,6 +637,8 @@ function applyPatchLocal(st, p){
   if(p.type === 'record'){ if(p.value === null) delete st.records[p.key]; else st.records[p.key] = p.value; }
   else if(p.type === 'shift'){ if(p.value === null) delete st.shifts[p.key]; else st.shifts[p.key] = p.value; }
   else if(p.type === 'leave'){ st.leaves = st.leaves || {}; if(p.value === null) delete st.leaves[p.key]; else st.leaves[p.key] = p.value; }
+  else if(p.type === 'edit'){ st.edits = st.edits || {}; if(p.value === null) delete st.edits[p.key]; else st.edits[p.key] = p.value; }
+  else if(p.type === 'audit'){ st.audit = p.value || []; }
   else if(p.type === 'settings') st.settings = p.value;
   else if(p.type === 'employees'){
     const by = {}; (st.employees||[]).forEach(e=>{ by[e.id] = e.lineUserId; });
@@ -639,7 +660,7 @@ async function ghRead(){
   return {state: st, sha: meta.sha};
 }
 function blankRemote(){
-  return { version:1, updatedAt:'', employees: clone(S.employees), settings: clone(S.settings), shifts:{}, records:{}, leaves:{} };
+  return { version:1, updatedAt:'', employees: clone(S.employees), settings: clone(S.settings), shifts:{}, records:{}, leaves:{}, edits:{}, audit:[] };
 }
 async function githubCall(payload){
   if(payload.action === 'state'){
@@ -703,6 +724,7 @@ function adoptRemote(state){
   if(!state) return;
   S.employees = state.employees; S.settings = state.settings;
   S.shifts = state.shifts || {}; S.records = state.records || {}; S.leaves = state.leaves || {};
+  S.edits = state.edits || {}; S.audit = Array.isArray(state.audit) ? state.audit : [];
   if(!S.employees.find(e=>e.id===curEmp)) curEmp = S.employees[0].id;
   S0 = clone(core(S));
   idbPut('kv','state',clone(S));
@@ -1150,26 +1172,62 @@ function editRecord(ds,emp){
     <div class="grid2" style="margin-top:12px"><button class="btn" data-save>儲存</button><button class="btn ghost" data-close>取消</button></div>
     <button class="btn danger" style="margin-top:8px" data-del>刪除這筆紀錄</button>`);
   const mk = t => t ? new Date(`${ds}T${t}:00`).toISOString() : null;
+  const before = S.records[k] ? clone(S.records[k]) : null;
   $('#sheet').querySelector('[data-save]').onclick = ()=>{
     const i=$('#edIn').value, o=$('#edOut').value;
     const useH  = Math.max(0, +$('#edUse').value || 0);
     const foldH = Math.max(0, +$('#edFold').value || 0);
     if(!i && !o && !useH && !foldH){ toast('至少要填一個時間，或填折備品／抵用時數'); return; }
-    r.in = i ? mk(i) : null;
-    if(o) r.out = mk(o); else r.out = null;
-    r.breakMin = +$('#edBreak').value || 0;
-    r.fold = foldH > 0;
-    if(foldH) r.foldMins = Math.round(foldH*60); else delete r.foldMins;
-    r.useMin = Math.round(useH*60);
-    r.note = $('#edNote').value.trim();
-    S.records[k] = r; save(); closeSheet(); renderAll(); toast('已更新');
+    const after = clone(r);
+    after.in = i ? mk(i) : null;
+    after.out = o ? mk(o) : null;
+    after.breakMin = +$('#edBreak').value || 0;
+    after.fold = foldH > 0;
+    if(foldH) after.foldMins = Math.round(foldH*60); else delete after.foldMins;
+    after.useMin = Math.round(useH*60);
+    after.note = $('#edNote').value.trim();
+
+    if(!ADMIN){                                  // 夥伴 → 送出申請，等管理員核准
+      const id = uid();
+      S.edits[id] = { id, emp, date:ds, before, after, by: ME ? ME.id : emp,
+                      status:'pending', createdAt: new Date().toISOString(),
+                      reason: after.note || '' };
+      save(); closeSheet(); renderAll();
+      toast('補登申請送出了，等管理員核准才會生效');
+      return;
+    }
+    S.records[k] = after;
+    logAudit('edit-record', k, before, after);
+    save(); closeSheet(); renderAll(); toast('已更新（已記錄）');
   };
   $('#sheet').querySelector('[data-del]').onclick = async ()=>{
-    if(!confirm('確定刪除這天的紀錄？照片也會一起刪掉。')) return;
+    if(!ADMIN){ toast('只有管理員能刪除紀錄。你可以改時間送出申請。'); return; }
+    if(!before){ toast('這天本來就沒有紀錄'); return; }
+    const why = prompt('刪除原因（會留在紀錄裡，保障雙方）：', '');
+    if(why === null) return;
     if(r.inPhoto && r.inPhoto.indexOf('gd:')!==0) await idbDel('photos',r.inPhoto);
     if(r.outPhoto && r.outPhoto.indexOf('gd:')!==0) await idbDel('photos',r.outPhoto);
-    delete S.records[k]; save(); closeSheet(); renderAll(); toast('已刪除');
+    logAudit('delete-record', k, before, null, why);
+    delete S.records[k]; save(); closeSheet(); renderAll(); toast('已刪除（已記錄）');
   };
+}
+
+/* ---------------- 補登申請 ---------------- */
+function decideEdit(id, ok){
+  const ed = S.edits[id]; if(!ed) return;
+  if(!ADMIN){ toast('只有管理員可以審核補登'); return; }
+  if(ok){
+    const k = key(ed.date, ed.emp);
+    const cur = S.records[k] ? clone(S.records[k]) : null;
+    S.records[k] = clone(ed.after);
+    logAudit('apply-edit', k, cur, ed.after, `核准 ${empName(ed.emp)} 的補登`);
+  }
+  ed.status = ok ? 'approved' : 'rejected';
+  ed.decidedAt = new Date().toISOString();
+  ed.decidedBy = ME ? ME.id : curEmp;
+  logAudit('decide-edit', id, null, null, `${ok?'核准':'駁回'} ${empName(ed.emp)} ${ed.date} 的補登`);
+  save(); renderAll();
+  toast(ok ? '已核准，紀錄已更新' : '已駁回');
 }
 
 /* ---------------- 畫面：統計 ---------------- */
@@ -1491,6 +1549,38 @@ function renderRoles(){
   });
 }
 
+/* ---------------- 稽核紀錄：誰刪了／改了什麼 ---------------- */
+function logAudit(action, target, before, after, note){
+  S.audit = S.audit || [];
+  S.audit.push({
+    at: new Date().toISOString(),
+    by: ME ? ME.id : (curEmp || '?'),
+    action, target,
+    before: before ? clone(before) : null,
+    after: after ? clone(after) : null,
+    note: note || ''
+  });
+  if(S.audit.length > 800) S.audit = S.audit.slice(-800);   // 留最近 800 筆就好
+}
+const AUDIT_NAME = {
+  'delete-record':'刪除打卡紀錄', 'edit-record':'修改打卡紀錄',
+  'delete-leave':'刪除請假單', 'decide-leave':'請假審核',
+  'delete-edit':'刪除補登申請', 'decide-edit':'補登審核',
+  'apply-edit':'套用補登'
+};
+function fmtRec(r){
+  if(!r) return '（無）';
+  const bits = [];
+  if(r.in) bits.push('上班 ' + hm(r.in));
+  if(r.out) bits.push('下班 ' + hm(r.out));
+  if(r.breakMin) bits.push('休息 ' + r.breakMin + '分');
+  if(r.foldMins) bits.push('折備品 ' + hrs(r.foldMins) + 'h');
+  if(r.useMin) bits.push('抵用 ' + hrs(r.useMin) + 'h');
+  if(r.leaveMin) bits.push('請假 ' + hrs(r.leaveMin) + 'h');
+  if(r.note) bits.push('備註：' + r.note);
+  return bits.length ? bits.join('、') : '（空白）';
+}
+
 /* ---------------- 請假 ---------------- */
 const LEAVE_HALF = 0.5;
 
@@ -1573,6 +1663,7 @@ function decideLeave(id, ok){
   lv.status = ok ? 'approved' : 'rejected';
   lv.decidedAt = new Date().toISOString();
   lv.decidedBy = me;
+  logAudit('decide-leave', lv.id, null, null, `${ok?'核准':'駁回'} ${empName(lv.emp)} ${lv.from} 的${lv.type}`);
   save(); renderAll();
   toast(ok ? '已核准，班表已經套上去了' : '已駁回');
 }
@@ -1613,12 +1704,75 @@ function renderLeave(){
   $('#leaveList').querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{
     const lv = S.leaves[b.dataset.del];
     if(!confirm('刪除這張假單？' + (lv.status === 'approved' ? '（已經套到班表上的時數會一起收回）' : ''))) return;
+    let why = '';
+    if(ADMIN && ME && lv.emp !== ME.id){
+      why = prompt('刪除原因（會留在紀錄裡，保障雙方）：', '');
+      if(why === null) return;
+    }
     if(lv.status === 'approved') applyLeave(lv, false);
-    delete S.leaves[b.dataset.del]; save(); renderAll(); toast('已刪除');
+    logAudit('delete-leave', lv.id, lv, null, why);
+    delete S.leaves[b.dataset.del]; save(); renderAll(); toast('已刪除（已記錄）');
   });
   renderLeaveForm();
 }
 $('#lvFilter').onchange = renderLeave;
+
+function renderEdits(){
+  const box = $('#editList'); if(!box) return;
+  const list = Object.values(S.edits || {})
+    .filter(ed => ADMIN || (ME && ed.emp === ME.id))
+    .sort((a,b)=> a.createdAt < b.createdAt ? 1 : -1);
+  const pending = Object.values(S.edits || {}).filter(e=>e.status==='pending').length;
+  const badge = $('#leaveBadge');
+  if(badge){
+    const total = pending + Object.values(S.leaves||{}).filter(l=>l.status==='pending').length;
+    badge.hidden = !total; badge.textContent = total;
+  }
+  box.innerHTML = list.length ? list.map(ed=>{
+    const stTxt = {pending:'待審核', approved:'已核准', rejected:'已駁回'}[ed.status];
+    return `<div class="leaf ${ed.status}">
+      <div class="who">
+        <strong>${empName(ed.emp)}</strong>
+        <span class="tag">${labelDate(ed.date)}</span>
+        <span class="st ${ed.status}">${stTxt}</span>
+      </div>
+      <div class="muted" style="margin-top:4px">原本：${fmtRec(ed.before)}</div>
+      <div style="margin-top:2px">改成：${fmtRec(ed.after)}</div>
+      ${ed.status !== 'pending' ? `<div class="muted" style="margin-top:4px">${stTxt} by ${empName(ed.decidedBy)}</div>` : ''}
+      <div class="row" style="gap:8px;margin-top:10px">
+        ${ed.status === 'pending' && ADMIN ? `<button class="mini" data-eok="${ed.id}">✅ 同意</button><button class="mini" data-eno="${ed.id}">✖️ 駁回</button>` : ''}
+        ${ed.status === 'pending' && !ADMIN ? '<span class="muted">等管理員處理</span>' : ''}
+        ${ADMIN ? `<button class="mini" style="margin-left:auto" data-edel="${ed.id}">刪除</button>` : ''}
+      </div></div>`;
+  }).join('') : '<div class="empty">沒有補登申請。</div>';
+  box.querySelectorAll('[data-eok]').forEach(b=>b.onclick=()=>decideEdit(b.dataset.eok, true));
+  box.querySelectorAll('[data-eno]').forEach(b=>b.onclick=()=>decideEdit(b.dataset.eno, false));
+  box.querySelectorAll('[data-edel]').forEach(b=>b.onclick=()=>{
+    const ed = S.edits[b.dataset.edel];
+    if(!confirm('刪除這筆補登申請？')) return;
+    logAudit('delete-edit', ed.id, ed, null, '');
+    delete S.edits[b.dataset.edel]; save(); renderAll(); toast('已刪除（已記錄）');
+  });
+}
+
+function renderAudit(){
+  const box = $('#auditList'); if(!box) return;
+  const list = (S.audit || []).slice().reverse().slice(0, 60);
+  box.innerHTML = list.length ? list.map(a=>{
+    const d = new Date(a.at);
+    const when = `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    const changed = (a.before || a.after)
+      ? `<div class="muted" style="margin-top:2px">原本：${fmtRec(a.before)}</div>
+         ${a.after ? `<div class="muted">改成：${fmtRec(a.after)}</div>` : ''}` : '';
+    return `<div class="bankrow" style="display:block">
+      <div><strong>${AUDIT_NAME[a.action] || a.action}</strong>
+        <span class="muted"> ・${empName(a.by)} ・${when}</span></div>
+      <div class="muted">${a.target || ''}</div>
+      ${changed}
+      ${a.note ? `<div class="muted">📝 ${a.note}</div>` : ''}
+    </div>`;
+  }).join('') : '<div class="empty">還沒有任何刪除或修改的紀錄。</div>';
+}
 
 /* ---------------- 設定 ---------------- */
 function renderSetup(){
@@ -1785,12 +1939,12 @@ $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='setup') renderSetup();
   if(b.dataset.tab==='sched') renderCal();
   if(b.dataset.tab==='bank') renderBank();
-  if(b.dataset.tab==='leave') renderLeave();
+  if(b.dataset.tab==='leave'){ renderLeave(); renderEdits(); }
 });
 
 function renderAll(){
   fillSelects(); renderLogin(); renderWho(); renderPunch(); renderCal();
-  renderRecs(); renderStats(); renderBank(); renderLeave(); renderSetup(); applyRole();
+  renderRecs(); renderStats(); renderBank(); renderLeave(); renderEdits(); renderSetup(); renderAudit(); applyRole();
 }
 function fillSelects(){
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');
