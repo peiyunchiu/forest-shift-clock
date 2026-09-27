@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-27T23:45:50+08:00",
+ "updatedAt": "2026-09-27T23:47:49+08:00",
  "employees": [
   {
    "id": "e1",
@@ -14,7 +14,8 @@
   },
   {
    "id": "e3",
-   "name": "夥伴 A"
+   "name": "夥伴 A",
+   "lineUserId": "U99f73e894bff217efccb205ec992c7c9"
   }
  ],
  "settings": {
