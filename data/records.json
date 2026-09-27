@@ -1,12 +1,13 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:01:15+08:00",
+ "updatedAt": "2026-09-28T00:01:26+08:00",
  "employees": [
   {
    "id": "e1",
    "name": "Chloe",
    "lineUserId": "U72dc110daa578a560acc24b392e46517",
-   "role": "admin"
+   "role": "admin",
+   "pinHash": "7ef45737ddac485934ae911a6da811525324409b94e89cb6c67b066d7aaef772"
   },
   {
    "id": "e2",
