@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:14:02+08:00",
+ "updatedAt": "2026-09-28T00:20:03+08:00",
  "employees": [
   {
    "id": "e1",
@@ -21,7 +21,7 @@
    "name": "夥伴 A",
    "lineUserId": "U99f73e894bff217efccb205ec992c7c9",
    "pinHash": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
-   "role": "admin"
+   "role": "staff"
   }
  ],
  "settings": {
