@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:44:36+08:00",
+ "updatedAt": "2026-09-28T00:45:01+08:00",
  "employees": [
   {
    "id": "e1",
@@ -83,11 +83,10 @@
    "date": "2026-09-28",
    "emp": "e3",
    "breakMin": 0,
-   "useMin": 420,
+   "useMin": 0,
    "note": "",
    "in": "2026-09-28T00:21:24+08:00",
-   "out": "2026-09-28T00:21:34+08:00",
-   "leaveId": "muk1tgecchlvdr"
+   "out": "2026-09-28T00:21:34+08:00"
   },
   "2026-09-27|e1": {
    "date": "2026-09-27",
@@ -98,32 +97,5 @@
    "in": "2026-09-27T15:50:22.005Z"
   }
  },
- "leaves": {
-  "muk1qw7m0cm35b": {
-   "id": "muk1qw7m0cm35b",
-   "emp": "e3",
-   "from": "2026-09-28",
-   "to": "2026-09-28",
-   "type": "補休",
-   "half": false,
-   "reason": "",
-   "status": "rejected",
-   "createdAt": "2026-09-27T16:42:18.130Z",
-   "decidedAt": "2026-09-27T16:43:57.513Z",
-   "decidedBy": "e1"
-  },
-  "muk1tgecchlvdr": {
-   "id": "muk1tgecchlvdr",
-   "emp": "e3",
-   "from": "2026-09-28",
-   "to": "2026-09-28",
-   "type": "補休",
-   "half": false,
-   "reason": "",
-   "status": "approved",
-   "createdAt": "2026-09-27T16:44:17.605Z",
-   "decidedAt": "2026-09-27T16:44:34.823Z",
-   "decidedBy": "e1"
-  }
- }
+ "leaves": {}
 }
