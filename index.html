@@ -1364,14 +1364,20 @@ function renderLogin(){
     loginPick = b.dataset.l; renderLogin();
     const e = S.employees.find(x=>x.id===loginPick);
     $('#loginPinWrap').hidden = !(e && e.pinHash);
-    $('#loginHint').textContent = (e && e.pinHash) ? '輸入你的密碼。忘記的話找 Chloe 重設。'
-      : `${e ? e.name : ''} 還沒設密碼，直接按登入就好。`;
+    $('#loginHint').textContent = (e && e.pinHash) ? '輸入你的密碼。忘記的話找管理員重設。'
+      : (roleReady() ? `⚠️ ${e ? e.name : ''} 還沒設密碼，不能登入。請管理員先幫他設一組。`
+                     : `${e ? e.name : ''} 還沒設密碼，直接按登入就好（等管理員設定權限後就會要密碼）。`);
   });
 }
 $('#btnLogin').onclick = async ()=>{
   const e = S.employees.find(x=>x.id===loginPick);
   if(!e){ toast('先選你是誰'); return; }
-  if(e.pinHash){
+  if(!e.pinHash){
+    if(roleReady()){       // 已經啟用權限了，就不准沒密碼的人進來
+      alert(`${e.name} 還沒設密碼，不能登入。\n請管理員到「設定 → 身分與密碼」幫他設一組。`);
+      return;
+    }
+  }else{
     const pin = $('#loginPin').value;
     if(!pin){ toast('請輸入密碼'); return; }
     if(await sha256(pin) !== e.pinHash){ alert('密碼不對'); return; }
@@ -1388,9 +1394,11 @@ function renderRoles(){
   const box = $('#roleList'); if(!box) return;
   const st = $('#pinState');
   st.className = 'cloudbar' + (roleReady() ? '' : ' bad');
-  st.textContent = roleReady()
-    ? '✅ 已啟用身分登入，每個人只能打自己的卡'
-    : '⚠️ 還沒有人被設為管理員，目前任何人都能改任何東西。先把自己設成管理員。';
+  const noPin = S.employees.filter(e=>!e.pinHash).map(e=>e.name);
+  st.textContent = !roleReady()
+    ? '⚠️ 還沒有人被設為管理員，目前任何人都能改任何東西。先把自己設成管理員。'
+    : (noPin.length ? `⚠️ 這些人還沒設密碼，登不進來也綁不了 LINE：${noPin.join('、')}`
+                    : '✅ 每個人都有密碼了，網站和 LINE 都要驗證身分');
   box.innerHTML = S.employees.map(e=>`
     <div class="card" style="box-shadow:none;margin-bottom:10px">
       <div class="row spread"><strong>${e.name}</strong>

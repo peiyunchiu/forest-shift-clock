@@ -139,18 +139,8 @@ function handleLineEvent(ev) {
   var state = readState();
   var me = findByLine(state, uid);
 
-  // 還沒綁定身分
-  if (!me) {
-    var picked = matchEmployeeByName(state, text.replace(/^我是\s*/, ''));
-    if (picked) {
-      mutate(function (s) {
-        var t = s.employees.filter(function (x) { return x.id === picked.id; })[0];
-        if (t) t.lineUserId = uid;
-      }, 'LINE 綁定 ' + picked.name);
-      return reply(ev.replyToken, '綁定好了，' + picked.name + ' 👍\n之後按下面的選單就能打卡。', menuQuick());
-    }
-    return replyWhoAreYou(ev.replyToken, '還不知道你是誰，選一個：');
-  }
+  // 還沒綁定身分 → 要先認人，而且要密碼
+  if (!me) return handleBinding(ev, uid, text, state);
 
   var ds = today();
 
@@ -160,11 +150,73 @@ function handleLineEvent(ev) {
   if (/^(今日|今天|狀況)/.test(text))              return reply(ev.replyToken, todayReport(readState(), ds), menuQuick());
   if (/^(時數|帳戶|折抵)/.test(text))              return reply(ev.replyToken, bankReport(readState(), me), menuQuick());
   if (/^(網站|排班|統計)/.test(text))              return reply(ev.replyToken, '排班表、統計、補登都在這裡：\n' + (P.getProperty('SITE_URL') || ''), menuQuick());
-  if (/^(改名|換人|重新綁定)/.test(text))          return replyWhoAreYou(ev.replyToken, '要改綁成誰？');
+  if (/^(改名|換人|重新綁定|解除綁定)/.test(text)) {
+    mutate(function (s) {
+      s.employees.forEach(function (x) { if (x.lineUserId === uid) delete x.lineUserId; });
+    }, 'LINE 解除綁定 ' + me.name);
+    CacheService.getScriptCache().remove('bind_' + uid);
+    return replyWhoAreYou(ev.replyToken, '已經解除綁定。要改綁成誰？');
+  }
 
   return reply(ev.replyToken,
     '看得懂這幾個：\n・上班\n・下班\n・折備品（可加時數，例如「折備品 2」）\n・今日\n・時數\n・網站\n\n打完卡直接傳照片，就會自動附到那筆打卡上。',
     menuQuick());
+}
+
+/**
+ * 綁定流程（兩步，中間要密碼）：
+ *   1. 傳「我是 XXX」→ 記住待綁定對象，回「請輸入密碼」
+ *   2. 下一則訊息當密碼 → 對得上才綁定
+ * 沒設密碼的員工一律不准綁，請管理員先到網站設。
+ */
+function handleBinding(ev, uid, text, state) {
+  var cache = CacheService.getScriptCache();
+  var pendingId = cache.get('bind_' + uid);
+
+  // 第二步：正在等密碼
+  if (pendingId) {
+    var target = state.employees.filter(function (e) { return e.id === pendingId; })[0];
+    if (!target) { cache.remove('bind_' + uid); return replyWhoAreYou(ev.replyToken, '那個人不見了，重新選一次：'); }
+    if (/^(取消|重選|換人)$/.test(text)) {
+      cache.remove('bind_' + uid);
+      return replyWhoAreYou(ev.replyToken, '好，重新選：');
+    }
+    if (sha256hex(text) !== target.pinHash) {
+      return reply(ev.replyToken, '密碼不對 ❌\n再輸入一次，或打「取消」重選。');
+    }
+    mutate(function (s) {
+      s.employees.forEach(function (x) { if (x.lineUserId === uid) delete x.lineUserId; });   // 同一支 LINE 只能是一個人
+      var t = s.employees.filter(function (x) { return x.id === target.id; })[0];
+      if (t) t.lineUserId = uid;
+    }, 'LINE 綁定 ' + target.name);
+    cache.remove('bind_' + uid);
+    return reply(ev.replyToken, '綁定好了，' + target.name + ' 👍\n之後按下面的選單就能打卡。', menuQuick());
+  }
+
+  // 第一步：選人
+  var picked = matchEmployeeByName(state, text.replace(/^我是\s*/, ''));
+  if (!picked) return replyWhoAreYou(ev.replyToken, '還不知道你是誰，選一個：');
+  if (!picked.pinHash) {
+    return reply(ev.replyToken,
+      picked.name + ' 還沒設密碼，不能綁定。\n請管理員到網站「設定 → 身分與密碼」幫他設一組，再回來綁。',
+      { items: [] });
+  }
+  if (picked.lineUserId && picked.lineUserId !== uid) {
+    cache.put('bind_' + uid, picked.id, 600);
+    return reply(ev.replyToken,
+      picked.name + ' 已經綁在另一支 LINE 上。\n如果是你換手機，請輸入 ' + picked.name + ' 的密碼來改綁；不是的話打「取消」。');
+  }
+  cache.put('bind_' + uid, picked.id, 600);
+  return reply(ev.replyToken, '請輸入 ' + picked.name + ' 的密碼：\n（打錯可以再試，或打「取消」重選）');
+}
+
+/** SHA-256，要跟網站算出來的一樣 */
+function sha256hex(str) {
+  var raw = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, str, Utilities.Charset.UTF_8);
+  return raw.map(function (b) {
+    var v = (b < 0 ? b + 256 : b).toString(16);
+    return v.length === 1 ? '0' + v : v;
+  }).join('');
 }
 
 function doPunch(token, me, ds, kind) {
