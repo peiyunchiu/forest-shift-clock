@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T00:44:19+08:00",
+ "updatedAt": "2026-09-28T00:44:36+08:00",
  "employees": [
   {
    "id": "e1",
@@ -83,10 +83,11 @@
    "date": "2026-09-28",
    "emp": "e3",
    "breakMin": 0,
-   "useMin": 0,
+   "useMin": 420,
    "note": "",
    "in": "2026-09-28T00:21:24+08:00",
-   "out": "2026-09-28T00:21:34+08:00"
+   "out": "2026-09-28T00:21:34+08:00",
+   "leaveId": "muk1tgecchlvdr"
   },
   "2026-09-27|e1": {
    "date": "2026-09-27",
@@ -119,8 +120,10 @@
    "type": "補休",
    "half": false,
    "reason": "",
-   "status": "pending",
-   "createdAt": "2026-09-27T16:44:17.605Z"
+   "status": "approved",
+   "createdAt": "2026-09-27T16:44:17.605Z",
+   "decidedAt": "2026-09-27T16:44:34.823Z",
+   "decidedBy": "e1"
   }
  }
 }
