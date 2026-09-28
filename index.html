@@ -216,6 +216,7 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         建議用 <b>Safari 開啟並「加入主畫面」</b>，不要從 LINE 裡點開。
       </div>
       <button class="btn ghost" id="btnRetryLink" style="margin-top:12px">重新連線</button>
+      <button class="mini" id="btnStandalone" style="margin-top:10px">不連線，只用這台（資料不會同步）</button>
     </div>
     <div class="card" id="loginCard">
       <h2>你是誰？</h2>
@@ -464,6 +465,12 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
 <script>
 /* ---------------- 小工具 ---------------- */
 const $ = s => document.querySelector(s);
+/** 安全綁定：找不到元素就跳過，不要讓整支程式當掉 */
+function on(sel, evt, fn){
+  const el = document.querySelector(sel);
+  if(!el){ console.warn('找不到元素，略過綁定：', sel); return; }
+  el[evt] = fn;
+}
 const pad = n => String(n).padStart(2,'0');
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,8);
 const dStr = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
