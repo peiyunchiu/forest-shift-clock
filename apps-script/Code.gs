@@ -192,6 +192,11 @@ function applyPatch(s, p, isAdmin, me) {
     var owner = (p.key || '').split('|')[1];
     if ((p.type === 'record' || p.type === 'shift') && owner && owner !== me.id) return;
     if (p.type === 'settings' || p.type === 'employees') return;
+    if (p.type === 'edit') {
+      if (!p.value) return;                            // 只有管理員能刪申請
+      if (p.value.emp !== me.id) return;                // 只能送自己的申請
+      if (p.value.status && p.value.status !== 'pending') return;   // 不能自己核准／駁回
+    }
   }
   if (p.type === 'record') {
     if (p.value === null) delete s.records[p.key]; else s.records[p.key] = p.value;
@@ -200,6 +205,11 @@ function applyPatch(s, p, isAdmin, me) {
   } else if (p.type === 'leave') {
     s.leaves = s.leaves || {};
     if (p.value === null) delete s.leaves[p.key]; else s.leaves[p.key] = p.value;
+  } else if (p.type === 'edit') {
+    s.edits = s.edits || {};
+    if (p.value === null) delete s.edits[p.key]; else s.edits[p.key] = p.value;
+  } else if (p.type === 'audit') {
+    s.audit = (p.value || []).slice(-800);
   } else if (p.type === 'settings') {
     s.settings = p.value;
   } else if (p.type === 'employees') {
@@ -625,7 +635,9 @@ function blankState() {
     settings: { base: 7, cut: 1 },
     shifts: {},
     records: {},
-    leaves: {}
+    leaves: {},
+    edits: {},
+    audit: []
   };
 }
 function normalize(s) {
@@ -637,6 +649,8 @@ function normalize(s) {
   s.shifts = s.shifts || {};
   s.records = s.records || {};
   s.leaves = s.leaves || {};
+  s.edits = s.edits || {};
+  s.audit = Array.isArray(s.audit) ? s.audit : [];
   return s;
 }
 
