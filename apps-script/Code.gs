@@ -360,10 +360,13 @@ function doFold(token, me, ds, text) {
       if (hoursGiven <= 0) { r.fold = false; delete r.foldMins; }
       else { r.fold = true; r.foldMins = Math.round(hoursGiven * 60); }
     } else {
-      // 沒指定時數：同一天再按一次就是累加一次預設時數
+      // 沒指定時數：同一天再按一次就累加，但設上限避免誤按或濫用
       var cur = r.foldMins != null ? r.foldMins : (r.fold ? Math.round(credit * 60) : 0);
+      var next = cur + Math.round(credit * 60);
+      var cap = Math.round((s.settings.foldCap || 4) * 60);      // 一天最多 4 小時
       r.fold = true;
-      r.foldMins = cur + Math.round(credit * 60);
+      r.foldMins = Math.min(next, cap);
+      res.capped = next > cap;
     }
     s.records[k] = r;
     res.mins = r.foldMins != null ? r.foldMins : Math.round(credit * 60);
@@ -373,7 +376,8 @@ function doFold(token, me, ds, text) {
   if (res.mins <= 0) return reply(token, '已取消今天的折備品。', menuQuick());
   var left = bankOf(readState(), me.id).left;
   return reply(token,
-    '🧺 ' + me.name + ' 今天折備品 ' + hrs(res.mins) + ' 小時已入帳\n目前可抵 ' + hrs(left) + ' 小時',
+    '🧺 ' + me.name + ' 今天折備品 ' + hrs(res.mins) + ' 小時已入帳\n目前可抵 ' + hrs(left) + ' 小時'
+    + (res.capped ? '\n\n⚠️ 一天上限 ' + ((readState().settings.foldCap || 4)) + ' 小時，超過的部分沒有計入。真的折更久請找管理員補登。' : ''),
     menuQuick());
 }
 

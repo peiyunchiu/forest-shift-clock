@@ -974,11 +974,14 @@ $('#foldChk').onchange = ()=>{
   const ds = todayStr(), k = key(ds,curEmp);
   const sh = S.shifts[k] || {};
   const r = S.records[k] || {date:ds, emp:curEmp, breakMin:0, useMin:0, note:''};
+  const foldBefore = S.records[k] ? clone(S.records[k]) : null;
   r.fold = $('#foldChk').checked;
   delete r.foldMins;                       // 用勾的就是預設時數，之後想改時數到「補登折備品」
   // 沒打卡、沒抵用、排班也沒排折備品 → 這筆就沒有存在的必要
   if(!r.fold && !sh.fold && !r.in && !r.out && !r.useMin) delete S.records[k];
   else S.records[k] = r;
+  logAudit('edit-record', k, foldBefore, S.records[k] || null,
+           r.fold ? '當天登記折備品' : '取消當天折備品');
   save(); renderAll();
   toast(r.fold ? `折備品 ＋${S.settings.cut} 小時已入帳` : '已取消今晚的折備品');
 };
@@ -1345,21 +1348,49 @@ $('#btnAddFold').onclick = ()=>{
       <div style="flex:1"><div class="muted">哪一天</div><input type="date" id="fDate" value="${todayStr()}"></div>
       <div style="flex:1"><div class="muted">折了幾小時</div><input type="number" id="fHrs" step="0.5" min="0" max="12" value="${S.settings.cut}"></div>
     </div>
-    <div class="hint">休假日、沒上班的日子也能補登，一樣入帳。填 0 就是取消那天的折備品。</div>
+    <div class="hint" id="fHint">休假日、沒上班的日子也能補登，一樣入帳。填 0 就是取消那天的折備品。</div>
     <div style="margin-top:10px"><div class="muted">備註</div><input type="text" id="fNote" placeholder="例如：休假日回來折了兩批"></div>
     <div class="grid2" style="margin-top:12px"><button class="btn" data-save>存進帳戶</button><button class="btn ghost" data-close>取消</button></div>`);
   $('#sheet').querySelector('#fWho').value = curEmp;
+  const refreshFoldHint = ()=>{
+    const ds = $('#fDate').value;
+    const past = ds && ds < todayStr();
+    $('#fHint').innerHTML = (!ADMIN && past)
+      ? '⚠️ 補<b>過去</b>的日子要管理員核准才會入帳。補今天的就直接生效。'
+      : '休假日、沒上班的日子也能補登，一樣入帳。填 0 就是取消那天的折備品。';
+    const btn = $('#sheet [data-save]');
+    if(btn) btn.textContent = (!ADMIN && past) ? '送出申請' : '存進帳戶';
+  };
+  $('#sheet').querySelector('#fDate').onchange = refreshFoldHint;
+  refreshFoldHint();
+
   $('#sheet').querySelector('[data-save]').onclick = ()=>{
     const emp = $('#fWho').value, ds = $('#fDate').value;
     const h = Math.max(0, +$('#fHrs').value || 0);
     if(!ds){ toast('請選日期'); return; }
+    if(!ADMIN && ME && emp !== ME.id){ toast('只能補自己的'); return; }
     const k = key(ds,emp), sh = S.shifts[k] || {};
-    const r = S.records[k] || {date:ds, emp, breakMin:0, useMin:0, note:''};
+    const before = S.records[k] ? clone(S.records[k]) : null;
+    const r = clone(S.records[k] || {date:ds, emp, breakMin:0, useMin:0, note:''});
     r.fold = h > 0;
     if(h) r.foldMins = Math.round(h*60); else delete r.foldMins;
     const note = $('#fNote').value.trim();
     if(note) r.note = note;
+
+    // 夥伴補「過去」的日子 → 走申請；補今天的 → 直接生效（等同當天勾選）
+    if(!ADMIN && ds < todayStr()){
+      const id = uid();
+      S.edits[id] = { id, emp, date:ds, before, after:r, by: ME ? ME.id : emp,
+                      status:'pending', createdAt: new Date().toISOString(),
+                      reason: note || `補登折備品 ${h} 小時` };
+      save(); closeSheet(); renderAll();
+      toast('已送出申請，等管理員核准才會入帳');
+      return;
+    }
+
     if(!r.fold && !sh.fold && !r.in && !r.out && !r.useMin) delete S.records[k]; else S.records[k] = r;
+    logAudit('edit-record', k, before, S.records[k] || null,
+             (h ? `補登折備品 ${h} 小時` : '取消折備品') + (ADMIN ? '' : '（本人當天登記）'));
     save(); closeSheet(); renderAll();
     toast(h ? `${labelDate(ds)} 折備品 ＋${h} 小時已入帳` : '已取消那天的折備品');
   };
