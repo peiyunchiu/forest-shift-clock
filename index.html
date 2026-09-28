@@ -1462,7 +1462,8 @@ async function restoreLogin(){
   applyRole();
 }
 function applyRole(){
-  const linked = (!!CLOUD && CLOUD.key && !lastErr) || standaloneOk;
+  // 內建雲端不帶共用密語（key 是空字串），所以只看「有沒有設定 + 連得上」，跟登入畫面同一條判斷
+  const linked = (!!CLOUD && !lastErr) || standaloneOk;
   const logged = !!ME && linked;          // 沒連上系統就什麼都不給用
   document.querySelectorAll('#tabs button').forEach(b=>{
     const t = b.dataset.tab;
