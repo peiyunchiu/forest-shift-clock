@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T15:05:43+08:00",
+ "updatedAt": "2026-09-28T17:06:19+08:00",
  "employees": [
   {
    "id": "e1",
@@ -122,6 +122,17 @@
    "createdAt": "2026-09-28T07:00:09.042Z",
    "decidedAt": "2026-09-28T07:05:15.830Z",
    "decidedBy": "e1"
+  },
+  "mul0wairsbqxcy": {
+   "id": "mul0wairsbqxcy",
+   "emp": "e1",
+   "from": "2026-09-28",
+   "to": "2026-09-28",
+   "type": "補休",
+   "half": true,
+   "reason": "",
+   "status": "pending",
+   "createdAt": "2026-09-28T09:06:16.515Z"
   }
  }
 }
