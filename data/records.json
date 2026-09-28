@@ -1,25 +1,22 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T01:30:19+08:00",
+ "updatedAt": "2026-09-28T14:06:16+08:00",
  "employees": [
   {
    "id": "e1",
    "name": "Chloe",
    "role": "admin",
-   "pinHash": "2c08f21e732c793ba66bc631de1461bfc8041a30b79e167f2e39b54065e42681",
    "lineUserId": "U72dc110daa578a560acc24b392e46517"
   },
   {
    "id": "e2",
    "name": "Kobe",
    "boss": true,
-   "role": "admin",
-   "pinHash": "16a3e9e922b41fde13be3ae377b18e08d44fb136594e7f9819ff2ac75bab5516"
+   "role": "admin"
   },
   {
    "id": "e3",
    "name": "夥伴 A",
-   "pinHash": "03ac674216f3e15c761ee1a5e255f067953623c8b388b4459e13f978d7c846f4",
    "role": "staff",
    "lineUserId": "U99f73e894bff217efccb205ec992c7c9"
   }
