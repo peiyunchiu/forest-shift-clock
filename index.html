@@ -348,6 +348,13 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
   <!-- ============ 請假 ============ -->
   <section id="tab-leave">
     <div class="card">
+      <div class="row spread" style="margin-bottom:6px">
+        <h2 style="margin:0">特休</h2>
+        <span class="muted">依勞基法第 38 條，從到職日起算</span>
+      </div>
+      <div id="annualList"></div>
+    </div>
+    <div class="card">
       <h2>我要請假</h2>
       <div class="muted">誰請假</div><select id="lvWho"></select>
       <div class="row" style="gap:8px;margin-top:10px">
@@ -408,6 +415,9 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <div style="flex:1"><div class="muted">折備品每次入帳</div><input type="number" id="setCut" step="0.5" min="0" max="8"></div>
       </div>
       <div class="hint">預設：每天一律上 7 小時；每折一次備品，＋1 小時進帳戶，之後自己挑一天抵。抵用的時數會從那天的應上班時數扣掉。</div>
+      <div style="margin-top:12px"><div class="muted">特休從哪天開始由系統記錄</div>
+        <input type="date" id="setAnnualSince"></div>
+      <div class="hint">這天以前就已經結束的特休年度，當作在系統外結清了，不會回頭算。開帳時如果有人還有上年度遞延沒休完，到下面「員工」填「遞延」。</div>
     </div>
     <div class="card">
       <h2>員工</h2>
@@ -1728,6 +1738,135 @@ function leaveSpanLabel(lv){
   return (Number.isInteger(h) ? h : h.toFixed(1)) + ' 小時';
 }
 
+/* ---------------- 特休：勞基法第 38 條，依到職日週年制 ---------------- */
+/** 服務滿 n 年（n ≥ 1）的那個年度可以休幾天 */
+function annualDaysForYear(n){
+  if(n === 1) return 7;
+  if(n === 2) return 10;
+  if(n <= 4)  return 14;               // 滿 3、4 年
+  if(n <= 9)  return 15;               // 滿 5～9 年
+  return Math.min(30, n + 6);          // 滿 10 年 16 天，之後每年 +1，最多 30 天
+}
+/** 日期加幾個月；遇到 1/31 + 1 個月這種會落在月底，不會跑到下個月 */
+function addMonths(ds, m){
+  const [y, mo, d] = ds.split('-').map(Number);
+  const t = new Date(y, mo - 1 + m, 1);
+  const last = new Date(t.getFullYear(), t.getMonth() + 1, 0).getDate();
+  t.setDate(Math.min(d, last));
+  return dStr(t);
+}
+/** 系統開始記錄特休的日期：9/17 是系統裡第一筆打卡。在這之前結束的年度視為已在系統外結清。 */
+const ANNUAL_SINCE_DEFAULT = '2026-09-17';
+const annualSince = () => (S.settings && S.settings.annualSince) || ANNUAL_SINCE_DEFAULT;
+
+/** 到 upto 為止已經開始的特休年度，每段 {from, to(不含), days, mins, label} */
+function annualPeriods(e, upto){
+  if(!e || !e.hireDate) return [];
+  const base = Math.round(S.settings.base * 60);
+  const out = [];
+  const half = addMonths(e.hireDate, 6);
+  if(half <= upto) out.push({from: half, to: addMonths(e.hireDate, 12), days: 3, mins: 3 * base, label: '到職滿半年'});
+  for(let n = 1; n <= 60; n++){
+    const from = addMonths(e.hireDate, 12 * n);
+    if(from > upto) break;
+    const d = annualDaysForYear(n);
+    out.push({from, to: addMonths(e.hireDate, 12 * (n + 1)), days: d, mins: d * base, label: `到職滿 ${n} 年`});
+  }
+  return out;
+}
+/**
+ * 一個人的特休帳：逐年度走，先扣上年度遞延過來的，再扣本年度的。
+ * 遞延的只能再放一年，那年結束還沒休完就要發薪結算。
+ */
+function annualLedger(empId, today){
+  const e = S.employees.find(x => x.id === empId);
+  if(!e) return {ok:false, msg:'找不到這個人'};
+  if(!e.hireDate) return {ok:false, noHire:true, msg:`${e.name} 還沒填到職日`};
+  const base = Math.round(S.settings.base * 60);
+  const since = annualSince();
+  // 開帳日以前就結束的年度不算（系統之前的事系統不知道）
+  const periods = annualPeriods(e, today).filter(p => p.to > since);
+
+  // 已核准的特休，拆成每一天用掉幾分鐘
+  const usedByDay = {};
+  Object.values(S.leaves || {}).forEach(lv => {
+    if(lv.emp !== empId || lv.type !== '特休' || lv.status !== 'approved') return;
+    const per = leavePerMin(lv);
+    daysBetween(lv.from, lv.to).forEach(ds => { usedByDay[ds] = (usedByDay[ds] || 0) + per; });
+  });
+  const usedIn = (a, b) => Object.entries(usedByDay).filter(([d]) => d >= a && d < b).reduce((t, [, m]) => t + m, 0);
+
+  // 到職滿半年前就請的 → 預支（只看系統開始記錄之後的）
+  const firstFrom = addMonths(e.hireDate, 6);      // 滿半年那天才開始有特休
+  const advance = Object.entries(usedByDay).filter(([d]) => d >= since && d < firstFrom).reduce((t, [, m]) => t + m, 0);
+
+  // 第一個記錄的年度：遞延進來多少由管理員開帳時填，之後就由系統自己算
+  let carryIn = Math.max(0, Math.round((+e.annualCarryH || 0) * 60));
+  const rows = periods.map(p => {
+    const used = usedIn(p.from, p.to);
+    const fromCarry = Math.min(carryIn, used);
+    const fromGrant = used - fromCarry;
+    const carryLeft = carryIn - fromCarry;          // 遞延的沒用完
+    const grantLeft = p.mins - fromGrant;            // 本年度的剩下（負的＝超休）
+    const ended = p.to <= today;
+    const row = {...p, carryIn, used, carryLeft, grantLeft, ended,
+                 payout: ended ? carryLeft : 0};     // 遞延那年結束還沒休 → 發薪
+    carryIn = Math.max(0, grantLeft);
+    return row;
+  });
+
+  const cur = rows.find(r => r.from <= today && today < r.to) || null;
+  const payouts = rows.filter(r => r.payout > 0);
+  return {
+    ok: true, e, base, rows, cur, advance, payouts,
+    firstFrom,
+    left: cur ? Math.max(0, cur.carryLeft) + cur.grantLeft : 0,
+    over: cur && cur.grantLeft < 0 ? -cur.grantLeft : 0,
+    payoutMin: payouts.reduce((t, r) => t + r.payout, 0)
+  };
+}
+const dayMinus1 = ds => { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() - 1); return dStr(d); };
+const asDays = (min, base) => { const v = min / base; return (Number.isInteger(v) ? v : v.toFixed(1)); };
+
+function renderAnnual(){
+  const box = $('#annualList'); if(!box) return;
+  const today = todayStr();
+  const people = S.employees.filter(e => ADMIN || (ME && e.id === ME.id));
+  const note = ADMIN ? `<div class="hint" style="margin:-2px 0 8px">系統從 ${annualSince().replace(/-/g,'/')} 開始記錄特休，更早的年度視為已結清。改日期或填開帳遞延到「設定」。</div>` : '';
+  box.innerHTML = note + people.map(e => {
+    const L = annualLedger(e.id, today);
+    const head = `<div class="row spread"><strong>${e.name}</strong>`
+               + `<span class="muted">${e.hireDate ? '到職 ' + e.hireDate.replace(/-/g,'/') : ''}</span></div>`;
+    if(!L.ok){
+      return `<div class="leaf">${head}<div class="muted" style="margin-top:4px">`
+           + (L.noHire ? `還沒填到職日，${ADMIN ? '到「設定 → 員工」填上就會開始算。' : '請管理員設定。'}` : L.msg)
+           + `</div></div>`;
+    }
+    if(!L.cur){
+      return `<div class="leaf">${head}<div class="muted" style="margin-top:4px">`
+           + `到職滿半年（${L.firstFrom.replace(/-/g,'/')}）起才有特休，那時會先有 3 天。</div>`
+           + (L.advance ? `<div style="color:var(--danger);margin-top:4px">⚠️ 還沒滿半年就請了 ${hrs(L.advance)} 小時特休（預支）</div>` : '')
+           + `</div>`;
+    }
+    const c = L.cur;
+    return `<div class="leaf">${head}
+      <div class="muted" style="margin-top:4px">${c.label}・本年度 ${c.from.replace(/-/g,'/')} ～ ${dayMinus1(c.to).replace(/-/g,'/')}</div>
+      <div class="grid2" style="margin-top:8px">
+        <div class="stat"><div class="k">本年度給</div><div class="v">${c.days} 天</div></div>
+        <div class="stat"><div class="k">還可以休</div><div class="v">${hrs(Math.max(0, L.left))} h</div></div>
+      </div>
+      <div class="muted" style="margin-top:6px">
+        約 ${asDays(Math.max(0, L.left), L.base)} 天・本年度已休 ${hrs(c.used)} 小時
+        ${c.carryIn ? `・上年度遞延 ${hrs(c.carryIn)} 小時（剩 ${hrs(c.carryLeft)}，${dayMinus1(c.to).replace(/-/g,'/')} 前要休完）` : ''}
+      </div>
+      ${L.over ? `<div style="color:var(--danger);margin-top:4px">⚠️ 本年度超休 ${hrs(L.over)} 小時</div>` : ''}
+      ${L.advance ? `<div style="color:var(--danger);margin-top:4px">⚠️ 到職未滿半年時預支了 ${hrs(L.advance)} 小時</div>` : ''}
+      ${L.payoutMin ? `<div style="color:var(--warn);margin-top:4px">💰 有 ${hrs(L.payoutMin)} 小時遞延特休過期沒休，依法要發薪結算：`
+          + L.payouts.map(r => `${r.label}那年 ${hrs(r.payout)} 小時`).join('、') + `</div>` : ''}
+    </div>`;
+  }).join('') || '<div class="empty">沒有員工。</div>';
+}
+
 function daysBetween(from,to){
   const out = [], d = new Date(from+'T00:00:00'), end = new Date(to+'T00:00:00');
   let n = 0;
@@ -1769,6 +1908,13 @@ function renderLeaveForm(){
     const left = bank(emp).left;
     hint.innerHTML = `這張假單要用掉 <b>${hrs(need)}</b> 小時，${empName(emp)} 的帳戶目前有 <b>${hrs(left)}</b> 小時`
       + (need > left ? ' <span style="color:var(--danger)">（不夠，核准後帳戶會變負的）</span>' : ' ✅');
+  }else if(t === '特休' && from && to){
+    const need = Math.round(leavePerMin({span: $('#lvSpan').value}) * daysBetween(from, to).length);
+    const L = annualLedger(emp, todayStr());
+    hint.innerHTML = !L.ok ? `⚠️ ${L.msg}，${ADMIN ? '到「設定 → 員工」填到職日' : '請管理員先設定到職日'}才算得出特休。`
+      : !L.cur ? `⚠️ ${empName(emp)} 到職還沒滿半年，${L.firstFrom.replace(/-/g,'/')} 起才有特休。`
+      : `這張假單要用 <b>${hrs(need)}</b> 小時特休，${empName(emp)} 目前還可以休 <b>${hrs(Math.max(0, L.left))}</b> 小時`
+        + (need > L.left ? ' <span style="color:var(--danger)">（不夠，核准後會超休）</span>' : ' ✅');
   }else if(!S.employees.some(e=>e.role==='admin')){
     hint.innerHTML = '⚠️ 還沒指定管理員，假單會一直卡在待審核。到「設定 → 身分與密碼」設一個。';
   }else{
@@ -1934,9 +2080,25 @@ function renderSetup(){
   paintSync();
   $('#setBase').value = S.settings.base;
   $('#setCut').value = S.settings.cut;
-  $('#empEdit').innerHTML = S.employees.map((e,i)=>`<div class="row" style="gap:8px;margin-bottom:8px">
-    <input type="text" value="${e.name.replace(/"/g,'&quot;')}" data-name="${e.id}">
+  $('#setAnnualSince').value = annualSince();
+  $('#empEdit').innerHTML = S.employees.map((e,i)=>`<div class="row wrap" style="gap:8px;margin-bottom:10px">
+    <input type="text" value="${e.name.replace(/"/g,'&quot;')}" data-name="${e.id}" style="flex:1 1 120px">
+    <label class="muted" style="display:flex;align-items:center;gap:6px;flex:1 1 170px">到職日
+      <input type="date" value="${e.hireDate||''}" data-hire="${e.id}" style="flex:1"></label>
+    <label class="muted" style="display:flex;align-items:center;gap:6px;flex:0 1 130px" title="開帳時從上年度遞延過來、還沒休的特休">遞延
+      <input type="number" min="0" step="0.5" value="${e.annualCarryH||''}" placeholder="0" data-carry="${e.id}" style="width:70px">時</label>
     <button class="mini" data-rm="${e.id}" ${S.employees.length<=1?'disabled':''}>移除</button></div>`).join('');
+  $('#empEdit').querySelectorAll('[data-carry]').forEach(inp=>inp.onchange=()=>{
+    const e = S.employees.find(x=>x.id===inp.dataset.carry);
+    const v = Math.max(0, +inp.value || 0);
+    if(v) e.annualCarryH = v; else delete e.annualCarryH;
+    save(); renderAll(); toast(`${e.name} 開帳遞延 ${v} 小時`);
+  });
+  $('#empEdit').querySelectorAll('[data-hire]').forEach(inp=>inp.onchange=()=>{
+    const e = S.employees.find(x=>x.id===inp.dataset.hire);
+    if(inp.value) e.hireDate = inp.value; else delete e.hireDate;
+    save(); renderAll(); toast(`${e.name} 的到職日已更新，特休會重新計算`);
+  });
   $('#empEdit').querySelectorAll('[data-name]').forEach(inp=>inp.onchange=()=>{
     const e = S.employees.find(x=>x.id===inp.dataset.name);
     e.name = inp.value.trim() || e.name; save(); renderAll();
@@ -1950,6 +2112,11 @@ function renderSetup(){
 }
 $('#setBase').onchange = ()=>{ S.settings.base = +$('#setBase').value||7; save(); renderAll(); };
 $('#setCut').onchange  = ()=>{ S.settings.cut  = +$('#setCut').value||0;  save(); renderAll(); };
+$('#setAnnualSince').onchange = ()=>{
+  const v = $('#setAnnualSince').value;
+  if(v) S.settings.annualSince = v; else delete S.settings.annualSince;
+  save(); renderAll(); toast('特休開始記錄日已更新，重新計算了');
+};
 $('#btnAddEmp').onclick = ()=>{ S.employees.push({id:uid(), name:'新員工'}); save(); renderAll(); };
 
 let cloudMode = 'github';
@@ -2083,12 +2250,12 @@ $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{
   if(b.dataset.tab==='setup') renderSetup();
   if(b.dataset.tab==='sched') renderCal();
   if(b.dataset.tab==='bank') renderBank();
-  if(b.dataset.tab==='leave'){ renderLeave(); renderEdits(); }
+  if(b.dataset.tab==='leave'){ renderAnnual(); renderLeave(); renderEdits(); }
 });
 
 function renderAll(){
   fillSelects(); renderLogin(); renderWho(); renderPunch(); renderCal();
-  renderRecs(); renderStats(); renderBank(); renderLeave(); renderEdits(); renderSetup(); renderAudit(); applyRole();
+  renderRecs(); renderStats(); renderBank(); renderAnnual(); renderLeave(); renderEdits(); renderSetup(); renderAudit(); applyRole();
 }
 function fillSelects(){
   const opts = S.employees.map(e=>`<option value="${e.id}">${e.name}</option>`).join('');

@@ -71,9 +71,10 @@ function diagnose() {
       : (k === 'LINE_TOKEN' || k === 'GH_TOKEN' ? '✅ 有值（' + v.length + ' 字）' : v));
   });
   try {
-    var res = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: ghHeaders(), muteHttpExceptions: true });
-    out.GitHub = res.getResponseCode() < 300 ? '✅ 讀得到'
-      : '❌ HTTP ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 120);
+    var cur = readRaw();
+    var kb = Math.round((cur.size || 0) / 1024);
+    out.GitHub = '✅ 讀得到，' + Object.keys(cur.state.records || {}).length + ' 筆打卡';
+    out.資料檔大小 = kb + ' KB' + (kb > 800 ? '（⚠️ 接近 GitHub 單檔處理上限，該考慮按年份分檔了）' : '');
   } catch (e) { out.GitHub = '❌ ' + e.message; }
   try {
     var r2 = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
@@ -588,13 +589,25 @@ function ghHeaders() {
 
 function readRaw() {
   var res = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: ghHeaders(), muteHttpExceptions: true });
-  if (res.getResponseCode() === 404) return { state: blankState(), sha: null };
+  if (res.getResponseCode() === 404) return { state: blankState(), sha: null };   // 檔案真的不存在才從空白開始
   if (res.getResponseCode() >= 300) throw new Error('讀 GitHub 失敗 ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
   var meta = JSON.parse(res.getContentText());
-  var text = Utilities.newBlob(Utilities.base64Decode(meta.content)).getDataAsString('UTF-8');
+  var text;
+  if (meta.encoding === 'base64' && meta.content) {
+    text = Utilities.newBlob(Utilities.base64Decode(meta.content)).getDataAsString('UTF-8');
+  } else {
+    // 檔案超過 1MB 時 GitHub 不給 base64 內容（content 是空的、encoding 是 none），改拿原始檔
+    var h = ghHeaders();
+    h.Accept = 'application/vnd.github.raw+json';
+    var raw = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: h, muteHttpExceptions: true });
+    if (raw.getResponseCode() >= 300) throw new Error('讀 GitHub 原始檔失敗 ' + raw.getResponseCode());
+    text = raw.getContentText('UTF-8');
+  }
   var state;
-  try { state = JSON.parse(text); } catch (e) { state = blankState(); }
-  return { state: normalize(state), sha: meta.sha };
+  // 讀不懂就報錯停下來。以前這裡會當成空白資料，下一次寫入就會把整份資料蓋成空的。
+  try { state = JSON.parse(text); }
+  catch (e) { throw new Error('資料檔讀不懂，為了不覆蓋現有資料先停止寫入：' + e.message); }
+  return { state: normalize(state), sha: meta.sha, size: meta.size || text.length };
 }
 
 function readState() { return readRaw().state; }
