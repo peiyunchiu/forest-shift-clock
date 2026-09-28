@@ -1,12 +1,13 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T15:01:18+08:00",
+ "updatedAt": "2026-09-28T15:04:01+08:00",
  "employees": [
   {
    "id": "e1",
    "name": "Chloe",
    "role": "admin",
-   "lineUserId": "U72dc110daa578a560acc24b392e46517"
+   "lineUserId": "U72dc110daa578a560acc24b392e46517",
+   "hasPin": true
   },
   {
    "id": "e2",
@@ -63,7 +64,7 @@
    "date": "2026-09-28",
    "emp": "e1",
    "breakMin": 0,
-   "fold": false,
+   "fold": true,
    "note": "",
    "in": "2026-09-28T01:30:19+08:00",
    "out": "2026-09-28T00:03:11+08:00"
