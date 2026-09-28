@@ -357,8 +357,14 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
             <option value="病假">病假</option>
             <option value="其他">其他</option>
           </select></div>
-        <div style="flex:1"><div class="muted">全天還半天</div>
-          <select id="lvHalf"><option value="0">全天</option><option value="1">半天</option></select></div>
+        <div style="flex:1"><div class="muted">請多久</div>
+          <select id="lvSpan">
+            <option value="full">整天</option>
+            <option value="half">半天</option>
+            <option value="60">1 小時</option>
+            <option value="120">2 小時</option>
+            <option value="180">3 小時</option>
+          </select></div>
       </div>
       <div style="margin-top:10px"><div class="muted">原因（可不填）</div>
         <input type="text" id="lvReason" placeholder="例如：家裡有事"></div>
@@ -1658,6 +1664,22 @@ function fmtRec(r){
 
 /* ---------------- 請假 ---------------- */
 const LEAVE_HALF = 0.5;
+/** 一張假單「每一天」要扣幾分鐘。舊假單只有 half 這個欄位，一樣讀得懂。 */
+function leaveSpanOf(lv){ return lv.span != null ? lv.span : (lv.half ? 'half' : 'full'); }
+function leavePerMin(lv){
+  const base = Math.round(S.settings.base * 60);
+  const sp = leaveSpanOf(lv);
+  if(sp === 'half') return Math.round(base * LEAVE_HALF);
+  if(sp === 'full') return base;
+  return Math.min(Math.max(0, Math.round(+sp || 0)), base);     // 幾小時，但不會超過一天
+}
+function leaveSpanLabel(lv){
+  const sp = leaveSpanOf(lv);
+  if(sp === 'half') return '半天';
+  if(sp === 'full') return '整天';
+  const h = Math.round(+sp || 0) / 60;
+  return (Number.isInteger(h) ? h : h.toFixed(1)) + ' 小時';
+}
 
 function daysBetween(from,to){
   const out = [], d = new Date(from+'T00:00:00'), end = new Date(to+'T00:00:00');
@@ -1667,12 +1689,11 @@ function daysBetween(from,to){
 }
 /** 這張假單總共幾分鐘 */
 function leaveTotalMin(lv){
-  const per = S.settings.base * 60 * (lv.half ? LEAVE_HALF : 1);
-  return Math.round(daysBetween(lv.from, lv.to).length * per);
+  return Math.round(daysBetween(lv.from, lv.to).length * leavePerMin(lv));
 }
 /** 核准 → 把時數寫進每一天；取消核准 → 清掉 */
 function applyLeave(lv, on){
-  const per = Math.round(S.settings.base * 60 * (lv.half ? LEAVE_HALF : 1));
+  const per = leavePerMin(lv);
   daysBetween(lv.from, lv.to).forEach(ds=>{
     const k = key(ds, lv.emp), sh = S.shifts[k] || {};
     const r = S.records[k] || {date:ds, emp:lv.emp, breakMin:0, useMin:0, note:''};
@@ -1697,7 +1718,7 @@ function renderLeaveForm(){
   const hint = $('#lvHint');
   if(t === '補休' && from && to){
     const days = daysBetween(from, to).length;
-    const need = Math.round(S.settings.base * 60 * ($('#lvHalf').value === '1' ? LEAVE_HALF : 1) * days);
+    const need = Math.round(leavePerMin({span: $('#lvSpan').value}) * days);
     const left = bank(emp).left;
     hint.innerHTML = `這張假單要用掉 <b>${hrs(need)}</b> 小時，${empName(emp)} 的帳戶目前有 <b>${hrs(left)}</b> 小時`
       + (need > left ? ' <span style="color:var(--danger)">（不夠，核准後帳戶會變負的）</span>' : ' ✅');
@@ -1707,7 +1728,7 @@ function renderLeaveForm(){
     hint.textContent = '送出後要等主管核准，核准了才會套到班表上。';
   }
 }
-['#lvType','#lvWho','#lvFrom','#lvTo','#lvHalf'].forEach(sel=>{
+['#lvType','#lvWho','#lvFrom','#lvTo','#lvSpan'].forEach(sel=>{
   const el = $(sel); if(el) el.onchange = renderLeaveForm;
 });
 
@@ -1719,7 +1740,8 @@ $('#btnLeaveSubmit').onclick = ()=>{
   const lv = {
     id: uid(), emp, from, to,
     type: $('#lvType').value,
-    half: $('#lvHalf').value === '1',
+    span: /^\d+$/.test($('#lvSpan').value) ? +$('#lvSpan').value : $('#lvSpan').value,
+    half: $('#lvSpan').value === 'half',        // 舊欄位一併留著，免得舊版看不懂
     reason: $('#lvReason').value.trim(),
     status: 'pending',
     createdAt: new Date().toISOString()
@@ -1760,7 +1782,7 @@ function renderLeave(){
       <div class="who">
         <strong>${empName(lv.emp)}</strong>
         <span class="tag">${lv.type}</span>
-        ${lv.half ? '<span class="tag">半天</span>' : ''}
+        <span class="tag">${leaveSpanLabel(lv)}</span>
         <span class="st ${lv.status}">${stTxt}</span>
       </div>
       <div>${range}<span class="muted"> ・${days} 天 ・共 ${hrs(leaveTotalMin(lv))} 小時</span></div>
