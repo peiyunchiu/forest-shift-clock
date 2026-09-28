@@ -302,6 +302,12 @@ td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabu
         <input type="month" id="recMonth" style="flex:1 1 140px">
         <select id="recWho" style="flex:1 1 120px"></select>
       </div>
+      <div class="row" style="gap:8px;margin-top:8px">
+        <input type="text" id="recSearch" style="flex:1"
+               placeholder="搜尋：日期、人名、備註、加班、折備品…">
+        <button class="mini" id="recClear" title="清除搜尋">✕</button>
+      </div>
+      <div class="hint" id="recSearchHint">打字就會跨所有月份搜尋。例如「2025-03」找那個月、「2025」找整年、「客人」找備註有這兩個字的。</div>
       <button class="btn ghost" id="btnAddPunch" style="margin-top:10px">＋ 補登以前的打卡</button>
       <div class="hint">忘了打卡、或哪天根本沒開網站，用這個補：選人、選日期，填上下班時間就好。</div>
     </div>
@@ -765,9 +771,12 @@ async function guardCloud(){
   if(!(await wasEverCloud())) return;
   w.dataset.owner = 'cloud';
   w.hidden = false;
+  const needLogin = /重新登入|密碼/.test(lastErr || '');
   w.innerHTML = !CLOUD
-    ? '⚠️ <b>雲端連線不見了</b>，現在打的卡只會存在這台裝置。<br>已經存進 GitHub 的不會消失，但請到「設定 → 雲端同步」重新貼一次 token，不然又會重演上次的事。'
-    : '⚠️ <b>同步失敗中：' + lastErr + '</b><br>現在打的卡只存在這台裝置。token 可能過期或被清掉了，到「設定 → 雲端同步」重貼一次。';
+    ? '⚠️ <b>雲端連線不見了</b>，現在打的卡只會存在這台裝置。<br>已經存進雲端的不會消失，但請到「設定 → 雲端同步」重新設定，不然這台打的卡傳不出去。'
+    : needLogin
+      ? '⚠️ <b>登入過期了，請重新登入</b><br>按上面的「登入」→ 選你自己 → 輸入密碼就好。<br>在那之前，這台打的卡只存在這台裝置。'
+      : '⚠️ <b>同步暫時有問題：' + lastErr + '</b><br>現在打的卡先存在這台裝置，連線恢復後會自動補傳。';
 }
 
 async function cloudSync(showToast){
@@ -1139,20 +1148,49 @@ $('#bulkApply').onclick = ()=>bulkRange((ds,emp)=>{ S.shifts[key(ds,emp)] = {off
 $('#bulkOff').onclick   = ()=>bulkRange((ds,emp)=>{ S.shifts[key(ds,emp)] = {off:true, start:'', fold:false}; });
 
 /* ---------------- 畫面：紀錄 ---------------- */
+/** 一筆紀錄符不符合搜尋字串（日期／人名／備註／加班折備品這些狀態） */
+function recMatches(r, q){
+  if(!q) return true;
+  const c = dayCalc(r.date, r.emp);
+  const bits = [
+    r.date, r.date.replace(/-/g,'/'), labelDate(r.date),
+    empName(r.emp), r.note || '',
+    isFold(r.date,r.emp) ? '折備品' : '',
+    c.used ? '抵用' : '', c.leave ? '請假' : '',
+    c.over ? '加班' : '', c.short ? '不足 少' : '',
+    r.in ? hm(r.in) : '', r.out ? hm(r.out) : ''
+  ].join(' ').toLowerCase();
+  // 空白分隔 = 每個詞都要中（「小明 加班」找小明的加班日）
+  return q.toLowerCase().split(/\s+/).filter(Boolean)
+          .every(w => bits.includes(w.replace(/\//g,'-')) || bits.includes(w));
+}
+
+const MAX_RECS = 200;
 async function renderRecs(){
   const mo = $('#recMonth').value || monStr(new Date());
   const who = $('#recWho').value;
-  const list = dayEntries()
+  const q = ($('#recSearch') ? $('#recSearch').value : '').trim();
+  const hint = $('#recSearchHint');
+  let list = dayEntries()
     .filter(r=>ADMIN || (ME && r.emp===ME.id))
-    .filter(r=>r.date.startsWith(mo) && (who==='all' || r.emp===who))
+    .filter(r=>(who==='all' || r.emp===who))
+    .filter(r=>q ? recMatches(r, q) : r.date.startsWith(mo))
     .sort((a,b)=> a.date<b.date?1:a.date>b.date?-1:0);
-  if(!list.length){ $('#recList').innerHTML = `<div class="card"><div class="empty">這個月還沒有打卡紀錄。</div></div>`; return; }
+  const total = list.length;
+  if(q && total > MAX_RECS) list = list.slice(0, MAX_RECS);
+  if(hint){
+    hint.innerHTML = q
+      ? (total ? `🔍 全部月份裡找到 <b>${total}</b> 筆` + (total > MAX_RECS ? `，先顯示最近 ${MAX_RECS} 筆（再打細一點會更好找）` : '') + '。'
+               : '🔍 找不到符合的紀錄。')
+      : '打字就會跨所有月份搜尋。例如「2025-03」找那個月、「2025」找整年、「客人」找備註有這兩個字的。';
+  }
+  if(!list.length){ $('#recList').innerHTML = `<div class="card"><div class="empty">${q ? '沒有符合「'+q+'」的紀錄。' : '這個月還沒有打卡紀錄。'}</div></div>`; return; }
   const cards = await Promise.all(list.map(async r=>{
     const c = dayCalc(r.date,r.emp);
     const [pi,po] = await Promise.all([photoUrl(r.inPhoto), photoUrl(r.outPhoto)]);
     return `<div class="rec">
       <div class="hd">
-        <strong>${labelDate(r.date)}</strong><span class="tag">${empName(r.emp)}</span>
+        <strong>${q ? r.date.slice(0,4) + ' 年 ' : ''}${labelDate(r.date)}</strong><span class="tag">${empName(r.emp)}</span>
         ${isFold(r.date,r.emp)?`<span class="tag fold">折備品 +${hrs(c.fold)}h</span>`:''}
         ${c.used?`<span class="tag">抵用 ${hrs(c.used)}h</span>`:''}
         ${c.leave?`<span class="tag">請假 ${hrs(c.leave)}h</span>`:''}
@@ -1179,6 +1217,9 @@ async function renderRecs(){
 }
 $('#recMonth').onchange = renderRecs;
 $('#recWho').onchange = renderRecs;
+let recSearchTimer = null;
+$('#recSearch').oninput = ()=>{ clearTimeout(recSearchTimer); recSearchTimer = setTimeout(renderRecs, 200); };
+$('#recClear').onclick = ()=>{ $('#recSearch').value = ''; renderRecs(); };
 
 function editRecord(ds,emp){
   if(!ADMIN && ME && emp !== ME.id){ toast('只能看／改自己的紀錄'); return; }
@@ -1457,9 +1498,15 @@ async function restoreLogin(){
       ME = S.employees.find(x=>x.id === saved.id) || null;
       lastErr = '';
     }catch(err){
-      TOKEN = null; ME = null;
-      await idbDel('kv','token');
-      if(!/重新登入|密碼/.test(err.message)) lastErr = err.message;   // 網路問題才算連線失敗
+      // 只有「憑證真的失效」才清掉登入狀態；網路不通、後端正在重新部署這種
+      // 暫時性的錯誤要把 token 留著，不然每次後端一有風吹草動大家就被登出
+      ME = null;
+      if(/重新登入|密碼/.test(err.message)){
+        TOKEN = null;
+        await idbDel('kv','token');
+      }else{
+        lastErr = err.message;                                     // 只標成連線失敗，下次自動重試
+      }
     }
   }
   ADMIN = !!(ME && ME.role === 'admin');
