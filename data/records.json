@@ -1,6 +1,6 @@
 {
  "version": 1,
- "updatedAt": "2026-09-28T14:59:46+08:00",
+ "updatedAt": "2026-09-28T15:00:11+08:00",
  "employees": [
   {
    "id": "e1",
@@ -18,7 +18,8 @@
    "id": "e3",
    "name": "夥伴 A",
    "role": "staff",
-   "lineUserId": "U99f73e894bff217efccb205ec992c7c9"
+   "lineUserId": "U99f73e894bff217efccb205ec992c7c9",
+   "hasPin": true
   }
  ],
  "settings": {
@@ -95,5 +96,17 @@
    "useMin": 0
   }
  },
- "leaves": {}
+ "leaves": {
+  "mukwe3f6c1dvvs": {
+   "id": "mukwe3f6c1dvvs",
+   "emp": "e3",
+   "from": "2026-09-28",
+   "to": "2026-09-28",
+   "type": "補休",
+   "half": false,
+   "reason": "",
+   "status": "pending",
+   "createdAt": "2026-09-28T07:00:09.042Z"
+  }
+ }
 }
