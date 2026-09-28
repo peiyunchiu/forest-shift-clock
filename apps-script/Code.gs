@@ -64,27 +64,17 @@ function diagnose() {
   var out = {};
   var pins = loadPins();
   out.密碼保管 = Object.keys(pins).length + ' 組存在私有設定（不在公開 repo）';
-  ['LINE_TOKEN','SITE_URL','DATA_DIR','DATA_FILE','SHEET_ID','GH_TOKEN','GH_REPO','GH_PATH','WEB_KEY'].forEach(function (k) {
+  ['LINE_TOKEN','GH_TOKEN','GH_REPO','GH_PATH','WEB_KEY','SITE_URL'].forEach(function (k) {
     var v = P.getProperty(k);
     out[k] = !v ? '❌ 沒設定'
       : (v === '請貼上' ? '❌ 還是預設文字，沒換成真的'
       : (k === 'LINE_TOKEN' || k === 'GH_TOKEN' ? '✅ 有值（' + v.length + ' 字）' : v));
   });
   try {
-    var f = dataFile();
-    var st = JSON.parse(f.getBlob().getDataAsString('UTF-8'));
-    out.資料存放 = '✅ Google Drive：' + f.getName()
-                 + '（' + Object.keys(st.records || {}).length + ' 筆打卡，最後更新 ' + (st.updatedAt || '?') + '）';
-    out.資料檔網址 = f.getUrl();
-    out.誰看得到 = f.getSharingAccess() === DriveApp.Access.PRIVATE
-      ? '✅ 只有你（私人）' : '⚠️ ' + f.getSharingAccess() + '，建議改回私人';
-  } catch (e) { out.資料存放 = '❌ ' + e.message; }
-  try { out.試算表副本 = sheetDoc().getUrl(); } catch (e) { out.試算表副本 = '❌ ' + e.message; }
-  try {
     var res = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: ghHeaders(), muteHttpExceptions: true });
-    out.舊的GitHub資料 = res.getResponseCode() < 300 ? '讀得到（已經不再寫入，只是舊備份）'
-      : 'HTTP ' + res.getResponseCode();
-  } catch (e) { out.舊的GitHub資料 = e.message; }
+    out.GitHub = res.getResponseCode() < 300 ? '✅ 讀得到'
+      : '❌ HTTP ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 120);
+  } catch (e) { out.GitHub = '❌ ' + e.message; }
   try {
     var r2 = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
       headers: { Authorization: 'Bearer ' + P.getProperty('LINE_TOKEN') }, muteHttpExceptions: true });
@@ -572,104 +562,7 @@ function bankOf(s, empId) {
   return { earned: earned, used: used, left: earned - used };
 }
 
-/* ============================ 資料存放：Google Drive ============================ */
-/**
- * 正式資料 = 你自己 Google Drive 裡的一個私人 JSON 檔（預設不分享給任何人）。
- * 另外自動維護一份 Google 試算表副本，方便直接打開看、匯出。
- * 底下的 GitHub 那幾個函式只留給 migrateGithubToDrive() 搬家用，平常不會跑到。
- */
-var DATA_NAME = 'forest-shift-clock-data.json';
-
-/** 放資料檔與試算表的資料夾（被刪掉會自動重建） */
-function dataFolder() {
-  var id = P.getProperty('DATA_DIR');
-  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* 被刪了就重建 */ } }
-  var f = DriveApp.createFolder('森林屋打卡資料');
-  P.setProperty('DATA_DIR', f.getId());
-  return f;
-}
-
-/** 正式資料檔；第一次跑會自動建一個空的 */
-function dataFile() {
-  var id = P.getProperty('DATA_FILE');
-  if (id) { try { return DriveApp.getFileById(id); } catch (e) { /* 被刪了就重建 */ } }
-  var folder = dataFolder();
-  var it = folder.getFilesByName(DATA_NAME);
-  var f = it.hasNext() ? it.next()
-        : folder.createFile(DATA_NAME, JSON.stringify(blankState(), null, 1), 'application/json');
-  P.setProperty('DATA_FILE', f.getId());
-  return f;
-}
-
-/** 給人看的試算表副本 */
-function sheetDoc() {
-  var id = P.getProperty('SHEET_ID');
-  if (id) { try { return SpreadsheetApp.openById(id); } catch (e) { /* 被刪了就重建 */ } }
-  var ss = SpreadsheetApp.create('森林屋打卡紀錄');
-  try { DriveApp.getFileById(ss.getId()).moveTo(dataFolder()); } catch (e) { log('移動試算表失敗: ' + e); }
-  P.setProperty('SHEET_ID', ss.getId());
-  return ss;
-}
-
-/** 把目前狀態整份重寫進試算表。壞掉也不能影響打卡，所以呼叫端一律包 try/catch。 */
-function syncSheet(s) {
-  var ss = sheetDoc();
-  var name = {};
-  (s.employees || []).forEach(function (e) { name[e.id] = e.name; });
-
-  var sh = ss.getSheetByName('打卡紀錄') || ss.insertSheet('打卡紀錄');
-  var head = ['日期', '員工', '上班', '下班', '休息(分)', '折備品(h)', '抵用(h)', '請假(h)', '備註'];
-  var rows = Object.keys(s.records || {}).sort().map(function (k) {
-    var r = s.records[k];
-    return [
-      r.date, name[r.emp] || r.emp,
-      r.in ? hm(r.in) : '', r.out ? hm(r.out) : '',
-      r.breakMin || 0,
-      foldMinOf(r, s.settings) / 60,
-      (r.useMin || 0) / 60,
-      (r.leaveMin || 0) / 60,
-      r.note || ''
-    ];
-  });
-  sh.clear();
-  sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
-  if (rows.length) sh.getRange(2, 1, rows.length, head.length).setValues(rows);
-  sh.setFrozenRows(1);
-
-  var meta = ss.getSheetByName('說明') || ss.insertSheet('說明');
-  meta.clear();
-  meta.getRange(1, 1, 4, 2).setValues([
-    ['這份試算表', '是副本，給人看的'],
-    ['正式資料', 'Drive 的 ' + DATA_NAME + '，每次打卡自動更新'],
-    ['直接改這裡', '不會影響系統，下次打卡就被蓋掉'],
-    ['最後更新', s.updatedAt || nowIso()]
-  ]);
-}
-
-/**
- * 一次性搬家：把舊的 GitHub 資料讀進來，寫成 Drive 的正式資料檔。
- * 在編輯器上方選這個函式按「執行」，跑一次就好。
- */
-function migrateGithubToDrive() {
-  var res = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: ghHeaders(), muteHttpExceptions: true });
-  if (res.getResponseCode() >= 300) throw new Error('讀不到舊資料 ' + res.getResponseCode());
-  var meta = JSON.parse(res.getContentText());
-  var text = Utilities.newBlob(Utilities.base64Decode(meta.content)).getDataAsString('UTF-8');
-  var state = normalize(JSON.parse(text));
-
-  var f = dataFile();
-  f.setContent(JSON.stringify(state, null, 1));
-  try { syncSheet(state); } catch (e) { log('試算表同步失敗: ' + e); }
-
-  var msg = '搬好了：' + Object.keys(state.records || {}).length + ' 筆打卡、'
-          + (state.employees || []).length + ' 個人\n'
-          + '資料檔：' + f.getUrl() + '\n'
-          + '試算表：' + sheetDoc().getUrl();
-  log(msg);
-  return msg;
-}
-
-/* ============================ GitHub 讀寫（只剩搬家用） ============================ */
+/* ============================ GitHub 讀寫 ============================ */
 
 function ghUrl() {
   return 'https://api.github.com/repos/' + P.getProperty('GH_REPO')
@@ -684,30 +577,43 @@ function ghHeaders() {
 }
 
 function readRaw() {
-  var f = dataFile();
+  var res = UrlFetchApp.fetch(ghUrl() + '?ref=main', { headers: ghHeaders(), muteHttpExceptions: true });
+  if (res.getResponseCode() === 404) return { state: blankState(), sha: null };
+  if (res.getResponseCode() >= 300) throw new Error('讀 GitHub 失敗 ' + res.getResponseCode() + ' ' + res.getContentText().slice(0, 200));
+  var meta = JSON.parse(res.getContentText());
+  var text = Utilities.newBlob(Utilities.base64Decode(meta.content)).getDataAsString('UTF-8');
   var state;
-  try { state = JSON.parse(f.getBlob().getDataAsString('UTF-8')); }
-  catch (e) { state = blankState(); }      // 檔案壞了或還是空的
-  return { state: normalize(state), file: f };
+  try { state = JSON.parse(text); } catch (e) { state = blankState(); }
+  return { state: normalize(state), sha: meta.sha };
 }
 
 function readState() { return readRaw().state; }
 
-/**
- * 讀 → 改 → 寫。所有寫入（網站、LINE）都經過這裡，
- * LockService 保證同一時間只有一個人在寫，所以不需要再處理撞車重試。
- */
+/** 讀 → 改 → 寫，遇到有人同時寫入就重試 */
 function mutate(fn, message) {
   var lock = LockService.getScriptLock();
   try { lock.waitLock(20000); } catch (e) { throw new Error('系統忙碌，請再按一次'); }
   try {
-    var cur = readRaw();
-    fn(cur.state);
-    cur.state.updatedAt = nowIso();
-    cur.file.setContent(JSON.stringify(cur.state, null, 1));
-    // 試算表只是副本，壞掉也絕對不能讓打卡失敗
-    try { syncSheet(cur.state); } catch (e) { log('試算表同步失敗（不影響打卡）: ' + e); }
-    return cur.state;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      var cur = readRaw();
+      fn(cur.state);
+      cur.state.updatedAt = nowIso();
+      var payload = {
+        message: message || ('更新 ' + nowStamp()),
+        content: Utilities.base64Encode(JSON.stringify(cur.state, null, 1), Utilities.Charset.UTF_8),
+        branch: 'main'
+      };
+      if (cur.sha) payload.sha = cur.sha;
+      var res = UrlFetchApp.fetch(ghUrl(), {
+        method: 'put', contentType: 'application/json',
+        headers: ghHeaders(), payload: JSON.stringify(payload), muteHttpExceptions: true
+      });
+      var code = res.getResponseCode();
+      if (code < 300) return cur.state;
+      if (code !== 409 && code !== 422) throw new Error('寫 GitHub 失敗 ' + code + ' ' + res.getContentText().slice(0, 200));
+      Utilities.sleep(400);                        // 撞車了，重讀再試
+    }
+    throw new Error('寫入一直被搶，請再試一次');
   } finally { lock.releaseLock(); }
 }
 
